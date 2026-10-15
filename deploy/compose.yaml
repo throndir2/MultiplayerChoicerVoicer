@@ -1,0 +1,54 @@
+name: multiplayer-choicer-voicer
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+services:
+  app:
+    image: ${MCV_IMAGE:-multiplayer-choicer-voicer:local}
+    restart: unless-stopped
+    environment:
+      TRUST_PROXY: 'true'
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PACK_CACHE_MAX_GB: ${PACK_CACHE_MAX_GB:-20}
+      DOWNLOAD_MAX_MB: ${DOWNLOAD_MAX_MB:-2048}
+      UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-2048}
+      VIDEO_MAX_HEIGHT: ${VIDEO_MAX_HEIGHT:-720}
+      VIDEO_PRESET: ${VIDEO_PRESET:-veryfast}
+      VIDEO_CRF: ${VIDEO_CRF:-27}
+      FFMPEG_THREADS: ${FFMPEG_THREADS:-0}
+      ROOM_IDLE_HOURS: ${ROOM_IDLE_HOURS:-6}
+      CATALOG_REFRESH_HOURS: ${CATALOG_REFRESH_HOURS:-6}
+    ports:
+      - '${MCV_BIND_ADDRESS:-127.0.0.1}:${MCV_PORT:-3090}:3000'
+    volumes:
+      - mcv-data:/data
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1536m
+          cpus: '2.0'
+    logging: *default-logging
+
+volumes:
+  mcv-data:

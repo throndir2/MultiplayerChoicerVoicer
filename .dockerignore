@@ -1,0 +1,11 @@
+.git
+.github
+.vscode
+**/node_modules
+**/dist
+data
+docs
+*.log
+.env
+.env.*
+!.env.example
