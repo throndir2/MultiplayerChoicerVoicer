@@ -6,6 +6,7 @@ import { useAssetsVersion } from '../lib/preload'
 import { useRoom } from '../lib/room'
 import { Library } from './Library'
 import { PlayersPanel } from './PlayersPanel'
+import { KeywordsCard, RandomPickNote } from './RandomPack'
 
 const MODES: { id: GameMode; icon: string; title: string; text: string }[] = [
   {
@@ -88,10 +89,11 @@ function PackCard({ onChoose }: { onChoose: () => void }) {
         ) : null}
       </div>
       {job && <JobStatus job={job} />}
+      <RandomPickNote withButton />
       {!pack && !job && (
         <p className="muted">
           {isHost
-            ? 'Choose a pack from GameBanana, from the packs on this server, or upload your own.'
+            ? 'Choose a pack from GameBanana, from the packs on this server, or upload your own. Or get a random pack from keywords below.'
             : 'The host has not chosen a pack yet.'}
         </p>
       )}
@@ -269,7 +271,7 @@ export function Lobby() {
   const [library, setLibrary] = useState(false)
   const [starting, setStarting] = useState(false)
   const pack = room.pack
-  const jobBusy = room.job && room.job.stage !== 'ready' && room.job.stage !== 'error'
+  const jobBusy = (room.job && room.job.stage !== 'ready' && room.job.stage !== 'error') || room.randomPick?.searching
   const active = room.players.filter((player) => player.connected && !player.spectator)
   const host = room.players.find((player) => player.id === room.hostId)
 
@@ -318,6 +320,7 @@ export function Lobby() {
       </aside>
       <div className="lobby__main">
         <PackCard onChoose={() => setLibrary(true)} />
+        <KeywordsCard />
         <section className="card">
           <h2>Game mode</h2>
           <div className="modes">

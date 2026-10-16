@@ -129,19 +129,11 @@ export class CatalogService {
   search(query: CatalogQuery): CatalogResponse {
     const pageSize = Math.min(60, Math.max(1, query.pageSize ?? 24))
     const page = Math.max(1, query.page ?? 1)
-    const tokens = (query.q ?? '')
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean)
+    const tokens = searchTokens(query.q ?? '')
     let results = [...this.items.values()]
     if (query.category) results = results.filter((item) => item.category === query.category)
     if (query.hideRated) results = results.filter((item) => !item.rated)
-    if (tokens.length > 0) {
-      results = results.filter((item) => {
-        const haystack = `${item.name} ${item.submitter} ${item.category} ${item.id}`.toLowerCase()
-        return tokens.every((token) => haystack.includes(token))
-      })
-    }
+    if (tokens.length > 0) results = results.filter((item) => matchesTokens(item, tokens))
     const sort = query.sort ?? 'new'
     const compare: Record<CatalogSort, (a: CatalogItem, b: CatalogItem) => number> = {
       new: (a, b) => b.dateAdded - a.dateAdded,
@@ -174,7 +166,23 @@ export class CatalogService {
     return value
   }
 
+  /** Items without a content rating that match every word of the keyword. An empty keyword matches every item. */
+  matching(keyword: string): CatalogItem[] {
+    const tokens = searchTokens(keyword)
+    return [...this.items.values()].filter((item) => !item.rated && matchesTokens(item, tokens))
+  }
+
   get(modId: number): CatalogItem | undefined {
     return this.items.get(modId)
   }
+}
+
+function searchTokens(text: string): string[] {
+  return text.toLowerCase().split(/\s+/).filter(Boolean)
+}
+
+function matchesTokens(item: CatalogItem, tokens: string[]): boolean {
+  if (tokens.length === 0) return true
+  const haystack = `${item.name} ${item.submitter} ${item.category} ${item.id}`.toLowerCase()
+  return tokens.every((token) => haystack.includes(token))
 }
