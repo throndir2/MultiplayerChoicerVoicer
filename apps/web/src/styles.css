@@ -157,6 +157,61 @@ input[type='radio'] {
   color: var(--muted);
 }
 
+.score {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.score--good {
+  color: var(--good);
+  background: rgba(81, 207, 102, 0.14);
+}
+
+.score--mid {
+  color: var(--warn);
+  background: rgba(252, 196, 25, 0.14);
+}
+
+.score--low {
+  color: var(--bad);
+  background: rgba(255, 107, 107, 0.14);
+}
+
+.ranking__info .score {
+  align-self: flex-start;
+}
+
+.tasks__item .score {
+  margin-left: auto;
+  font-size: 0.75rem;
+}
+
+.match-scores h3 {
+  margin: 1rem 0 0.5rem;
+}
+
+.match-scores__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.match-scores__list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
 /* Buttons */
 
 .button {

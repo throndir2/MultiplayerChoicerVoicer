@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ClientEvents, taskCounts } from '@mcv/shared'
-import { ProgressBar, percent } from '../components/ui'
+import { ProgressBar, ScoreBadge, percent } from '../components/ui'
 import { useMicrophone } from '../lib/microphone'
 import { useRoom } from '../lib/room'
 import { ProgressPanel } from './ProgressPanel'
@@ -123,6 +123,7 @@ export function RecordingView() {
                         <strong>{task.line.characters.join(' & ')}</strong>
                         <span>{task.line.text}</span>
                       </span>
+                      <ScoreBadge score={task.dub.recordings[task.line.id]?.score} />
                     </button>
                   </li>
                 )

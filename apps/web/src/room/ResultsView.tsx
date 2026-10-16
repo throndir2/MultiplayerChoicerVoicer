@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { ClientEvents, type DubView } from '@mcv/shared'
-import { PlayerChip, ProgressBar, percent } from '../components/ui'
+import { ClientEvents, dubMatchScore, dubMatchScores, type DubView } from '@mcv/shared'
+import { PlayerChip, ProgressBar, ScoreBadge, percent } from '../components/ui'
 import { useRoom } from '../lib/room'
 import { DubPlayer } from './DubPlayer'
 import { dubTitle } from './PlaybackView'
@@ -32,6 +32,31 @@ function ExportButton({ dub }: { dub: DubView }) {
   )
 }
 
+function MatchScores({ dub }: { dub: DubView }) {
+  const { room } = useRoom()
+  const rows = dubMatchScores(dub)
+  if (rows.length === 0) return null
+  return (
+    <div className="match-scores">
+      <h3>🎯 Match with the original</h3>
+      <ol className="match-scores__list">
+        {rows.map((row) => {
+          const player = room.players.find((entry) => entry.id === row.playerId)
+          return (
+            <li key={row.playerId}>
+              {player ? <PlayerChip name={player.name} color={player.color} small /> : <span>Player</span>}
+              <ScoreBadge score={row.score} label />
+              <span className="muted">
+                {row.recorded} of {row.assigned} lines recorded
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
 export function ResultsView() {
   const { room, isHost, roundManifest, command, notify, me } = useRoom()
   const [watching, setWatching] = useState<DubView | null>(null)
@@ -48,10 +73,17 @@ export function ResultsView() {
     if (!dubId) continue
     tally.set(dubId, [...(tally.get(dubId) ?? []), voter])
   }
-  const ranked = [...round.dubs].sort((a, b) => (tally.get(b.id)?.length ?? 0) - (tally.get(a.id)?.length ?? 0))
+  const single = round.dubs.length === 1 ? round.dubs[0] : null
+  const matches = new Map(round.dubs.map((dub) => [dub.id, dubMatchScore(dub)]))
+  const bestMatch = Math.max(0, ...matches.values())
+  const matchWinners = bestMatch > 0 ? round.dubs.filter((dub) => matches.get(dub.id) === bestMatch) : []
+  const ranked = [...round.dubs].sort(
+    (a, b) =>
+      (tally.get(b.id)?.length ?? 0) - (tally.get(a.id)?.length ?? 0) ||
+      (matches.get(b.id) ?? 0) - (matches.get(a.id) ?? 0),
+  )
   const best = tally.get(ranked[0]?.id ?? '')?.length ?? 0
   const winners = best > 0 ? ranked.filter((dub) => (tally.get(dub.id)?.length ?? 0) === best) : []
-  const single = round.dubs.length === 1 ? round.dubs[0] : null
 
   return (
     <div className="results">
@@ -79,6 +111,12 @@ export function ResultsView() {
             {best === 1 ? 'vote' : 'votes'}!
           </p>
         )}
+        {!single && matchWinners.length > 0 && (
+          <p className="winner">
+            🎯 Best match with the original: <strong>{matchWinners.map((dub) => dubTitle(dub, names)).join(' and ')}</strong>{' '}
+            with {bestMatch} points
+          </p>
+        )}
         {single && roundManifest ? (
           <>
             <DubPlayer
@@ -91,6 +129,7 @@ export function ResultsView() {
             <div className="button-row">
               <ExportButton dub={single} />
             </div>
+            <MatchScores dub={single} />
           </>
         ) : (
           <ol className="ranking">
@@ -104,6 +143,7 @@ export function ResultsView() {
                     <span className="muted">
                       {votes.length} {votes.length === 1 ? 'vote' : 'votes'}
                     </span>
+                    <ScoreBadge score={matches.get(dub.id)} label />
                     <div className="ranking__voters">
                       {votes.map((voter) => {
                         const player = room.players.find((entry) => entry.id === voter)

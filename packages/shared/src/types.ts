@@ -205,6 +205,8 @@ export interface RecordingView {
   url: string
   duration: number
   createdAt: number
+  /** 0..100: how well the loudness envelope and the length match the original line. Null if it could not be measured. */
+  score?: number | null
 }
 
 export interface DubExportView {
