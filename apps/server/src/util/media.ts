@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import type { AppConfig } from '../config.js'
-import { TAKE_RATE, cleanTake, speechBounds } from './take.js'
+import { TAKE_RATE, cleanTake } from './take.js'
 
 export interface RunOptions {
   onStdoutLine?: (line: string) => void
@@ -104,10 +104,8 @@ export interface SubtitleEntry {
 export interface RecordingOptions {
   /** Longest take in seconds (the length of the original line). 0 = no limit. */
   maxSeconds?: number
-  /** Seconds from the start of the upload to the start of the original line (the end of the countdown). */
+  /** Seconds from the start of the upload to the moment the player hears the start of the original line. */
   lead?: number
-  /** File of the original line. */
-  prompt?: string | null
 }
 
 export interface RecordingResult {
@@ -285,25 +283,13 @@ export class Media {
   }
 
   /**
-   * Cleans a take (see `cleanTake`): cuts the countdown, places the first word where the original line has its
-   * first word, normalises the loudness and stores AAC, which every browser can decode.
+   * Cleans a take (see `cleanTake`): cuts the part before the lead without moving the take in time, normalises
+   * the loudness and stores AAC, which every browser can decode.
    */
   async processRecording(input: string, output: string, options: RecordingOptions = {}): Promise<RecordingResult> {
     const maxSeconds = options.maxSeconds ?? 0
     const raw = await this.decodePcm(input, TAKE_RATE)
-    let prompt: Float32Array | null = null
-    if (options.prompt) {
-      try {
-        prompt = await this.decodePcm(options.prompt, TAKE_RATE)
-      } catch {
-        prompt = null
-      }
-    }
-    const result = cleanTake(raw, {
-      lead: options.lead ?? 0,
-      promptOnset: prompt ? (speechBounds(prompt, TAKE_RATE)?.onset ?? 0) : 0,
-      maxSeconds,
-    })
+    const result = cleanTake(raw, { lead: options.lead ?? 0, maxSeconds })
     if (result.samples.length < TAKE_RATE * 0.05) return { duration: 0, onset: result.onset }
     const pcm = `${output}.f32`
     await fs.writeFile(pcm, Buffer.from(result.samples.buffer, result.samples.byteOffset, result.samples.byteLength))
