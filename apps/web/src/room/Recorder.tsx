@@ -62,6 +62,8 @@ interface Props {
   showScene: boolean
   /** "Next" needs a take of this line (when the player cannot come back). */
   requireTake: boolean
+  /** Play the original line once when the recorder opens (the player moved to this line). */
+  autoPlay: boolean
   onPrev: (() => void) | null
   onNext: (() => void) | null
   /** Shown instead of "Next" on the last line. */
@@ -79,6 +81,7 @@ export function Recorder({
   guideVolume,
   showScene,
   requireTake,
+  autoPlay,
   onPrev,
   onNext,
   onFinish,
@@ -103,6 +106,8 @@ export function Recorder({
   const frame = useRef<number | null>(null)
   const stopTimer = useRef<number | null>(null)
   const sceneTimer = useRef<number | null>(null)
+  /** Changes on each stop, so a playback that is still loading does not start after a stop. */
+  const playToken = useRef(0)
   const starting = useRef(false)
   const modeRef = useRef(mode)
   modeRef.current = mode
@@ -165,6 +170,7 @@ export function Recorder({
   }, [color, lineSeconds])
 
   const stopPlayback = useCallback(() => {
+    playToken.current += 1
     for (const source of sources.current) {
       try {
         source.stop()
@@ -260,16 +266,19 @@ export function Recorder({
       return
     }
     stopPlayback()
+    const token = playToken.current
+    // A stop, a recording, a new playback or a line change while the audio loads cancels this playback.
+    const stale = () => token !== playToken.current || modeRef.current !== 'idle'
     await unlockAudio()
     let buffer: AudioBuffer | null = null
     try {
       if (kind === 'original' && line.promptUrl) buffer = await decodeUrl(line.promptUrl, 0)
       if (kind === 'take') buffer = localTake.current ?? (recording ? await decodeUrl(recording.url, 0) : null)
     } catch {
-      notify('The audio could not be played')
+      if (!stale()) notify('The audio could not be played')
       return
     }
-    if (!buffer) return
+    if (!buffer || stale()) return
     const ctx = audioContext()
     const offset = kind === 'take' ? RECORDING_OFFSET : 0
     const waveOffset = kind === 'take' ? (take.current?.offset ?? RECORDING_OFFSET) : 0
@@ -289,11 +298,13 @@ export function Recorder({
         video.addEventListener('seeked', done, { once: true })
         window.setTimeout(done, 1500)
       })
+      if (stale()) return
       const startAt = ctx.currentTime + 0.05
       void video.play().catch(() => undefined)
       if (manifest.backingUrl && assets.isDone(manifest.backingUrl)) {
         try {
           const backing = await decodeUrl(manifest.backingUrl, 0)
+          if (stale()) return
           const source = ctx.createBufferSource()
           source.buffer = backing
           const gain = ctx.createGain()
@@ -500,6 +511,13 @@ export function Recorder({
     },
     [line.id],
   )
+
+  // The recorder opens again for each line, so this plays the original line once when the player moves to a line.
+  useEffect(() => {
+    if (!autoPlay || !line.promptUrl) return
+    const timer = window.setTimeout(() => void play('original'), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   const hasTake = Boolean(recording || localTake.current)
   const nextReady = Boolean(onNext) && (!requireTake || Boolean(recording))
