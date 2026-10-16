@@ -238,13 +238,12 @@ export function RecordingView() {
                 </select>
               </label>
               <label className="toggle">
-                <input type="checkbox" checked={mic.echo} onChange={(event) => mic.setEcho(event.target.checked)} />
-                <span>Echo cancellation</span>
-              </label>
-              <label className="toggle">
                 <input type="checkbox" checked={mic.clean} onChange={(event) => mic.setClean(event.target.checked)} />
                 <span>Noise suppression and automatic volume</span>
               </label>
+              <p className="hint">
+                Keep this off for the most natural take. It is a voice-call filter, and it can make your voice muffled.
+              </p>
               <label className="field">
                 <span>
                   Original voice while recording: {guideVolume > 0 ? `${Math.round(guideVolume * 100)} %` : 'off'}

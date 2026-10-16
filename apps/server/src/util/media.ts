@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import type { AppConfig } from '../config.js'
-import { TAKE_RATE, cleanTake, speechBounds, type EchoResult } from './take.js'
+import { TAKE_RATE, cleanTake, speechBounds } from './take.js'
 
 export interface RunOptions {
   onStdoutLine?: (line: string) => void
@@ -108,17 +108,12 @@ export interface RecordingOptions {
   lead?: number
   /** File of the original line. */
   prompt?: string | null
-  /** False when the original line did not play during the recording, so it cannot be in the take. */
-  guide?: boolean
-  /** Subtract the echo of the original line (`prompt`) from the take. Off by default: it damaged real takes. */
-  echo?: boolean
 }
 
 export interface RecordingResult {
   duration: number
   /** Seconds of the first word in the upload, or null when no speech was found. */
   onset: number | null
-  echo: EchoResult | null
 }
 
 export class Media {
@@ -290,9 +285,8 @@ export class Media {
   }
 
   /**
-   * Cleans a take (see `cleanTake`): removes the echo of the original line (only with `echo: true`), cuts the
-   * countdown, places the first word where the original line has its first word, normalises the loudness and
-   * stores AAC, which every browser can decode.
+   * Cleans a take (see `cleanTake`): cuts the countdown, places the first word where the original line has its
+   * first word, normalises the loudness and stores AAC, which every browser can decode.
    */
   async processRecording(input: string, output: string, options: RecordingOptions = {}): Promise<RecordingResult> {
     const maxSeconds = options.maxSeconds ?? 0
@@ -307,13 +301,14 @@ export class Media {
     }
     const result = cleanTake(raw, {
       lead: options.lead ?? 0,
-      reference: options.echo && options.guide !== false ? prompt : null,
       promptOnset: prompt ? (speechBounds(prompt, TAKE_RATE)?.onset ?? 0) : 0,
       maxSeconds,
     })
-    if (result.samples.length < TAKE_RATE * 0.05) return { duration: 0, onset: result.onset, echo: result.echo }
+    if (result.samples.length < TAKE_RATE * 0.05) return { duration: 0, onset: result.onset }
     const pcm = `${output}.f32`
     await fs.writeFile(pcm, Buffer.from(result.samples.buffer, result.samples.byteOffset, result.samples.byteLength))
+    // Without speech, loudnorm only raises the noise to full volume, so the take keeps its level.
+    const normalise = result.onset === null ? [] : ['-af', 'loudnorm=I=-16:TP=-1.5:LRA=11']
     try {
       await runCommand(
         this.config.ffmpeg,
@@ -326,8 +321,7 @@ export class Media {
           '1',
           '-i',
           pcm,
-          '-af',
-          'loudnorm=I=-16:TP=-1.5:LRA=11',
+          ...normalise,
           '-ar',
           '48000',
           '-ac',
@@ -346,7 +340,7 @@ export class Media {
       await fs.rm(pcm, { force: true })
     }
     const duration = await this.duration(output)
-    return { duration: maxSeconds > 0 ? Math.min(duration, maxSeconds) : duration, onset: result.onset, echo: result.echo }
+    return { duration: maxSeconds > 0 ? Math.min(duration, maxSeconds) : duration, onset: result.onset }
   }
 
   /** Decodes the first audio stream to mono 32-bit float samples at `sampleRate`. */

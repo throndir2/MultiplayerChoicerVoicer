@@ -10,8 +10,8 @@ import { findPackDirs, readPack } from '../src/packs/discover.js'
 import { processPackPhaseA, processPackPhaseB } from '../src/packs/processor.js'
 import { autoCast, buildDubs } from '../src/rooms/room-service.js'
 import { Media, runCommand } from '../src/util/media.js'
-import { findDelay, speechBounds } from '../src/util/take.js'
-import { RATE, addAt, addEcho, noise, scaleTo, voice } from './synthetic.js'
+import { speechBounds } from '../src/util/take.js'
+import { RATE, addAt, noise, scaleTo, voice } from './synthetic.js'
 
 const hasFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0
 const work = mkdtempSync(path.join(tmpdir(), 'mcv-test-'))
@@ -57,7 +57,6 @@ describe.skipIf(!hasFfmpeg)('pack pipeline', () => {
     const recording = path.join(work, 'take.m4a')
     const { duration: seconds } = await media.processRecording(path.join(outDir, 'lines', 'L001.mp3'), recording, {
       prompt: path.join(outDir, 'lines', 'L001.mp3'),
-      guide: false,
     })
     // 0.15 s lead-in + 1.6 s tone + 0.25 s tail. The tone starts where it starts in the original line.
     expect(seconds).toBeGreaterThan(1.6)
@@ -88,20 +87,18 @@ describe.skipIf(!hasFfmpeg)('pack pipeline', () => {
     expect(new Set(Object.values(chaos?.assignments ?? {})).size).toBe(2)
   }, 120_000)
 
-  it('removes the original line from a browser take and puts the first word where the original has it', async () => {
+  it('puts the first word of a browser take where the original has it', async () => {
     const media = new Media(loadConfig())
     const config = loadConfig()
-    const dir = path.join(work, 'echo')
+    const dir = path.join(work, 'timing')
     mkdirSync(dir, { recursive: true })
     const lead = 1.5
     // The original line: its first word comes 0.3 s after the start.
     const original = new Float32Array(Math.round(2.9 * RATE))
     addAt(original, scaleTo(voice(2.5, 11), 0.1), 0.3)
-    // The upload: the countdown in loud noise, the player (late by 0.45 s, with a pause), and a copy of the
-    // original line 90 ms after it played.
+    // The upload: the countdown in loud noise, then the player (late by 0.45 s, with a pause).
     const upload = noise(Math.round((lead + 2.9) * RATE), 0.006, 12)
     addAt(upload, scaleTo(voice(2.3, 12, [[0.9, 1.4]]), 0.1), lead + 0.45)
-    addEcho(upload, original, lead + 0.09, 0.4)
     const encode = async (samples: Float32Array, name: string, codec: string[]) => {
       const raw = path.join(dir, `${name}.f32`)
       writeFileSync(raw, Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength))
@@ -114,24 +111,12 @@ describe.skipIf(!hasFfmpeg)('pack pipeline', () => {
     const prompt = await media.decodePcm(promptFile, RATE)
     const promptOnset = speechBounds(prompt, RATE)?.onset ?? 0
     expect(Math.abs(promptOnset - 0.3)).toBeLessThan(0.03)
-    const leftover = async (file: string) => {
-      const samples = await media.decodePcm(file, RATE)
-      return findDelay(samples, prompt, -RATE / 2, RATE / 2, RATE)?.strength ?? 0
-    }
 
     const cleaned = path.join(dir, 'cleaned.m4a')
-    const result = await media.processRecording(takeFile, cleaned, { prompt: promptFile, lead, maxSeconds: 2.9, echo: true })
-    expect(result.echo).not.toBeNull()
-    expect(Math.abs((result.echo?.delay ?? 0) - (lead + 0.09))).toBeLessThan(0.01)
+    const result = await media.processRecording(takeFile, cleaned, { prompt: promptFile, lead, maxSeconds: 2.9 })
     expect(result.duration).toBeLessThanOrEqual(2.9)
     const samples = await media.decodePcm(cleaned, RATE)
     const onset = speechBounds(samples, RATE)?.onset ?? 0
     expect(Math.abs(onset + RECORDING_OFFSET - promptOnset)).toBeLessThan(0.04)
-    expect(await leftover(cleaned)).toBeLessThan(8)
-
-    // The same take without echo removal (the default) still holds the original line.
-    const plain = path.join(dir, 'plain.m4a')
-    await media.processRecording(takeFile, plain, { prompt: promptFile, lead, maxSeconds: 2.9 })
-    expect(await leftover(plain)).toBeGreaterThan(15)
   }, 120_000)
 })
