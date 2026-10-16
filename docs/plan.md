@@ -131,6 +131,14 @@ Yes. A website can store large files without a download prompt. The files do not
   5. reports its progress to the server, so the room shows how ready each player is;
   6. removes files that were not used for 7 days.
 - If the video is not completely downloaded when playback starts, the video streams from the server, and the audio still plays from the local copy.
+- **Downloaded files panel.** A player can see and delete the stored files without the developer tools of the browser. The panel opens from the "💾 Downloaded files" button on the home page, from the 💾 button in the top bar of a room, and from "Manage downloaded files" in the lobby. The panel:
+  1. tells the player that the files are in the private storage of the site in the browser, not in the Downloads folder, and that unused files go after 7 days;
+  2. shows the total size, and one row for each pack (with its name, size, number of files and last use) and one row for the recordings of players;
+  3. has a "Delete" button for each row and a "Delete all" button;
+  4. marks the packs and recordings that the open room uses. If the player deletes them, the files download again at once, because the room needs them;
+  5. has the option "Delete all downloaded files when I leave a room". The files go when the player leaves the room in the site. If the player closes the tab in a room, the files go at the next visit, unless that visit goes back into the same room (a reload).
+- A delete removes the files from the Cache Storage, from the index of last use and from the memory of the asset manager. Running downloads of the deleted files stop and do not write to the cache. The preloader of an open room then requests the files of the room again. The page does not reload.
+- The client remembers the name of each pack in `localStorage`, so the panel can show names. For older files, the panel asks the server for the name.
 
 ## 10. Architecture
 

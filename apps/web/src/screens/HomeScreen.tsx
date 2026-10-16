@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useLocation } from 'wouter'
 import { MAX_NAME_LENGTH, ROOM_CODE_LENGTH, type RoomInfoResponse, type SessionResponse } from '@mcv/shared'
 import { PackCreatorLink } from '../components/ui'
+import { StorageButton } from '../components/StoragePanel'
 import { api, loadName, loadSession, saveName, saveSession } from '../lib/api'
 
 const PHASE_TEXT: Record<string, string> = {
@@ -139,6 +140,9 @@ export function HomeScreen({ joinCode }: { joinCode?: string }) {
       )}
 
       <footer className="home__footer">
+        <p>
+          <StorageButton />
+        </p>
         <p>
           Packs come from the <a href="https://gamebanana.com/games/20674">The Choicer Voicer</a> community on
           GameBanana. This is an unofficial fan project. You need a microphone and a browser such as Chrome, Edge,
