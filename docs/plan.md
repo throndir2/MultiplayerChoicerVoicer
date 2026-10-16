@@ -83,9 +83,10 @@ A line with more than one character goes to the player of the first assigned cha
 
 - The player sees the line image, the character, the caption and the length of the original line.
 - "Play original" plays the prompt. When the video is downloaded, the player sees the real scene too.
+- "Original voice while recording" (in the Microphone card, 0 to 100 %, default 30 %, saved in the browser) sets the volume of the original line during a recording. When it is above 0, "Record" starts a 1.5 s lead-in, then the original line plays at that volume. When "Play in the scene" is on, the muted video plays too. The waveform shows the original line where it plays. The player must use headphones, or the microphone also records the original line. At 0 %, the original line does not play during a recording.
 - The waveform shows the live microphone signal while the player records. After the recording, it shows the take below the original, so the player can compare the timing.
 - The take uploads immediately after "Stop". The server trims the silence at the start and at the end, normalises the loudness, and stores AAC (`.m4a`), which all browsers can decode. A new take replaces the old take.
-- Keyboard: `R` record/stop, `P` play original, `N` next line, `B` previous line.
+- Keyboard: `R` record/stop, `P` play original, `T` play my take, `N` next line, `B` previous line.
 - Every player sees the progress of the other players: a percentage bar, the line number, a small image of the scene and a "recording now" mark.
 
 ## 8. Playback

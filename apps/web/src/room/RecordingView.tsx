@@ -6,9 +6,17 @@ import { useRoom } from '../lib/room'
 import { ProgressPanel } from './ProgressPanel'
 import { Recorder } from './Recorder'
 
+const GUIDE_KEY = 'mcv:guide-volume'
+
+function savedGuideVolume(): number {
+  const saved = Number(window.localStorage.getItem(GUIDE_KEY) ?? '0.3')
+  return Number.isFinite(saved) ? Math.min(1, Math.max(0, saved)) : 0.3
+}
+
 export function RecordingView() {
   const { room, me, isHost, roundManifest: manifest, command, notify } = useRoom()
   const mic = useMicrophone()
+  const [guideVolume, setGuideVolume] = useState(savedGuideVolume)
   const round = room.round
 
   const tasks = useMemo(() => {
@@ -144,6 +152,7 @@ export function RecordingView() {
               position={index + 1}
               total={tasks.length}
               mic={mic}
+              guideVolume={guideVolume}
               onPrev={index > 0 ? () => setIndex(index - 1) : null}
               onNext={index < tasks.length - 1 ? () => setIndex(index + 1) : null}
             />
@@ -169,6 +178,27 @@ export function RecordingView() {
                 <input type="checkbox" checked={mic.clean} onChange={(event) => mic.setClean(event.target.checked)} />
                 <span>Noise suppression and automatic volume</span>
               </label>
+              <label className="field">
+                <span>
+                  Original voice while recording: {guideVolume > 0 ? `${Math.round(guideVolume * 100)} %` : 'off'}
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={guideVolume}
+                  onChange={(event) => {
+                    const value = Number(event.target.value)
+                    setGuideVolume(value)
+                    window.localStorage.setItem(GUIDE_KEY, String(value))
+                  }}
+                />
+              </label>
+              <p className="hint">
+                The original line plays at this volume while you record, so you can hear it and speak with it. Use
+                headphones, or the microphone also records the original line.
+              </p>
             </section>
           )}
         </div>
