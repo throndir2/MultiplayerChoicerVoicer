@@ -10,6 +10,7 @@ This is an unofficial fan project. It is not affiliated with the creators of The
 
 - **Rooms**: a 5-character code and an invite link (`/join/CODE`). The host chooses the pack and the mode, and can remove players or give the host role to another player.
 - **Pack library**: the server keeps a searchable copy of the GameBanana "Dub Mode" list. Players can also paste a GameBanana or direct link, or upload a `.zip`, `.7z`, `.rar` archive or a pack folder (resumable upload).
+- **Random pack from keywords**: every player can add keywords to a shared list. The host gets a random GameBanana pack that matches one of the keywords, and can re-roll. Packs that the room already played are skipped.
 - **Game modes**:
   - **Versus**: everybody dubs the whole pack, then you watch every dub and vote.
   - **Cast**: the host gives characters to players (or uses auto-cast), and everybody watches one shared dub.

@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   DEFAULT_ROOM_SETTINGS,
+  MAX_KEYWORDS,
   MAX_PLAYERS,
   PLAYBACK_LEAD_MS,
   PLAYER_COLORS,
@@ -12,6 +13,7 @@ import {
   buildCues,
   loudnessEnvelope,
   matchEnvelopes,
+  parseKeywords,
   playbackPosition,
   unfinishedPlayers,
   type AssetStatus,
@@ -21,8 +23,10 @@ import {
   type PackManifest,
   type PlaybackState,
   type ProgressView,
+  type RandomPickView,
   type RecordingView,
   type RoomInfoResponse,
+  type RoomKeyword,
   type RoomPhase,
   type RoomSettings,
   type RoomView,
@@ -38,6 +42,7 @@ import { isHostAllowed } from '../util/download.js'
 import { ensureDir, readJson, removeDir, writeJsonAtomic } from '../util/fsx.js'
 import { createRoomCode, createToken, hashToken, randomId, shuffle } from '../util/ids.js'
 import type { Media } from '../util/media.js'
+import { pickRandomPack } from './random-pack.js'
 
 /** An error whose message is safe to show to the player. */
 export class RoomError extends Error {
@@ -70,6 +75,10 @@ interface RoomRecord {
   packId: string | null
   packChoices: string[]
   jobKey: string | null
+  keywords: RoomKeyword[]
+  /** GameBanana mods that this room played or picked at random, oldest first. */
+  playedModIds: number[]
+  randomPick: RandomPickView | null
   cast: Record<string, string>
   round: RoundView | null
   playback: PlaybackState | null
@@ -82,6 +91,14 @@ interface RoomsFile {
 }
 
 const HOST_GRACE_MS = 60_000
+const MAX_PLAYED_MODS = 500
+const RANDOM_AUTO_RETRIES = 3
+
+const RANDOM_ERRORS = {
+  'empty-catalog': 'The list from GameBanana is not loaded yet. Try again in a minute.',
+  'no-matches': 'No pack matches these keywords. Add other keywords.',
+  'no-usable-file': 'The server did not find a pack that it can download. Try again.',
+} as const
 
 const AUDIO_EXTENSIONS: Record<string, string> = {
   'audio/webm': 'webm',
@@ -187,6 +204,10 @@ export class RoomService extends EventEmitter {
   private readonly progress = new Map<string, ProgressView>()
   private readonly hostTimers = new Map<string, NodeJS.Timeout>()
   private readonly promptEnvelopes = new Map<string, number[]>()
+  /** GameBanana mods without an archive file within the download limit, or whose archive has no pack. */
+  private readonly unusableMods = new Set<number>()
+  /** Room code -> automatic re-rolls after failed random picks since the host last pressed the button. */
+  private readonly randomRetries = new Map<string, number>()
   private saveTimer: NodeJS.Timeout | null = null
   private sweepTimer: NodeJS.Timeout | null = null
   private exportChain: Promise<void> = Promise.resolve()
@@ -224,6 +245,9 @@ export class RoomService extends EventEmitter {
     for (const room of stored?.rooms ?? []) {
       room.emptySince = now
       room.settings = { ...DEFAULT_ROOM_SETTINGS, ...room.settings }
+      room.keywords ??= []
+      room.playedModIds ??= []
+      room.randomPick = room.randomPick?.searching ? null : (room.randomPick ?? null)
       if (room.round) room.round.finished ??= {}
       if (room.playback?.status === 'playing') {
         room.playback = { ...room.playback, status: 'paused', position: playbackPosition(room.playback, now), startedAt: now }
@@ -349,6 +373,9 @@ export class RoomService extends EventEmitter {
       packId: null,
       packChoices: [],
       jobKey: null,
+      keywords: [],
+      playedModIds: [],
+      randomPick: null,
       cast: {},
       round: null,
       playback: null,
@@ -474,6 +501,8 @@ export class RoomService extends EventEmitter {
       pack: room.packId ? this.packs.summary(room.packId) : null,
       packChoices: room.packChoices.map((id) => this.packs.summary(id)).filter((value) => value !== null),
       job: this.packs.job(room.jobKey),
+      keywords: room.keywords,
+      randomPick: room.randomPick,
       cast: room.cast,
       round: room.round,
       playback: room.playback,
@@ -514,13 +543,15 @@ export class RoomService extends EventEmitter {
         this.changed(room)
       } else if (job.stage === 'error') {
         this.changed(room)
+        this.retryRandomPick(room)
       } else {
         this.emit('job', room.code, job)
       }
     }
   }
 
-  private attachJob(room: RoomRecord, job: JobView): JobView {
+  private attachJob(room: RoomRecord, job: JobView, randomPick: RandomPickView | null = null): JobView {
+    room.randomPick = randomPick
     if (job.stage === 'ready') {
       this.applyPack(room, job.packIds)
       room.jobKey = null
@@ -535,10 +566,15 @@ export class RoomService extends EventEmitter {
     const room = this.get(code)
     this.requireHost(room, actorId)
     this.requirePhase(room, 'lobby', 'results')
+    if (request.kind === 'random') {
+      this.randomRetries.delete(room.code)
+      return this.randomSource(room)
+    }
     if (request.kind === 'pack') {
       if (!this.packs.manifest(request.packId)) throw new RoomError('That pack is no longer on the server', 404)
       this.applyPack(room, [request.packId])
       room.jobKey = null
+      room.randomPick = null
       this.changed(room)
       return null
     }
@@ -557,6 +593,86 @@ export class RoomService extends EventEmitter {
       throw new RoomError(`Links from ${url.hostname} are not allowed. Upload the file instead.`)
     }
     return this.attachJob(room, this.packs.requestUrl(request.url, this.playerName(code, actorId)))
+  }
+
+  /** Starts the GameBanana job for a random pack that matches one of the room keywords. */
+  private async randomSource(room: RoomRecord): Promise<JobView> {
+    if (room.randomPick?.searching) throw new RoomError('The server already looks for a random pack', 409)
+    const previous = room.randomPick
+    const searching: RandomPickView = { searching: true, modId: null, name: null, keyword: null, matches: 0 }
+    room.randomPick = searching
+    this.changed(room)
+    try {
+      const currentModId =
+        (room.packId ? this.packs.manifest(room.packId)?.source.modId : undefined) ?? previous?.modId ?? null
+      const result = await pickRandomPack({
+        keywords: room.keywords.map((keyword) => keyword.text),
+        catalog: this.catalog,
+        played: new Set(room.playedModIds),
+        unusable: this.unusableMods,
+        currentModId,
+        maxBytes: this.config.downloadMaxBytes,
+      })
+      if (!result.ok) throw new RoomError(RANDOM_ERRORS[result.reason])
+      if (room.randomPick !== searching || (room.phase !== 'lobby' && room.phase !== 'results')) {
+        throw new RoomError('The pack changed while the server looked for a random pack', 409)
+      }
+      const { pick } = result
+      const job = await this.gamebananaJob(pick.modId, pick.fileId)
+      this.rememberPlayed(room, pick.modId)
+      return this.attachJob(room, job, {
+        searching: false,
+        modId: pick.modId,
+        name: pick.name,
+        keyword: pick.keyword,
+        matches: pick.matches,
+      })
+    } catch (error) {
+      if (room.randomPick === searching) {
+        room.randomPick = previous
+        this.changed(room)
+      }
+      throw error
+    }
+  }
+
+  private rememberPlayed(room: RoomRecord, modId: number | undefined): void {
+    if (!modId) return
+    room.playedModIds = [...room.playedModIds.filter((id) => id !== modId), modId].slice(-MAX_PLAYED_MODS)
+  }
+
+  /** The archive of a random pick has no usable pack (some mods only have a note or a link): pick another pack. */
+  private retryRandomPick(room: RoomRecord): void {
+    const modId = room.randomPick && !room.randomPick.searching ? room.randomPick.modId : null
+    if (!modId || (room.phase !== 'lobby' && room.phase !== 'results')) return
+    this.unusableMods.add(modId)
+    const tries = this.randomRetries.get(room.code) ?? 0
+    if (tries >= RANDOM_AUTO_RETRIES) return
+    this.randomRetries.set(room.code, tries + 1)
+    void this.randomSource(room).catch((error: unknown) => {
+      if (!(error instanceof RoomError)) this.log.warn({ err: error }, 'random pack retry failed')
+    })
+  }
+
+  addKeywords(code: string, actorId: string, text: string): void {
+    const room = this.get(code)
+    if (!room.players.some((player) => player.id === actorId)) throw new RoomError('Unknown player')
+    const existing = new Set(room.keywords.map((keyword) => keyword.text.toLowerCase()))
+    const added = parseKeywords(text).filter((keyword) => !existing.has(keyword.toLowerCase()))
+    if (added.length === 0) return
+    if (room.keywords.length + added.length > MAX_KEYWORDS) {
+      throw new RoomError(`The list can have at most ${MAX_KEYWORDS} keywords`)
+    }
+    room.keywords = [...room.keywords, ...added.map((keyword) => ({ text: keyword, playerId: actorId }))]
+    this.changed(room)
+  }
+
+  removeKeyword(code: string, actorId: string, keyword: string): void {
+    const room = this.get(code)
+    if (!room.players.some((player) => player.id === actorId)) throw new RoomError('Unknown player')
+    const key = keyword.trim().toLowerCase()
+    room.keywords = room.keywords.filter((entry) => entry.text.toLowerCase() !== key)
+    this.changed(room)
   }
 
   private async gamebananaJob(modId: number, fileId: number): Promise<JobView> {
@@ -697,6 +813,7 @@ export class RoomService extends EventEmitter {
     room.votes = {}
     room.playback = null
     for (const player of room.players) this.progress.delete(player.id)
+    this.rememberPlayed(room, manifest.source.modId)
     this.packs.touch(manifest.id)
     this.packs.prioritizeVideo(manifest.id)
     this.changed(room)

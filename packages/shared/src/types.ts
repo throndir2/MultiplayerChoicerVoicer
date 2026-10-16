@@ -12,6 +12,9 @@ export const RECORDING_OFFSET = 0
 export const RECORDING_LEAD_IN = 1.5
 /** Delay between the host pressing play and the synchronised start on every client. */
 export const PLAYBACK_LEAD_MS = 1500
+/** Keywords in the shared room list for the random pack pick. */
+export const MAX_KEYWORDS = 20
+export const MAX_KEYWORD_LENGTH = 40
 
 export const PLAYER_COLORS = [
   '#ff6b6b',
@@ -263,6 +266,24 @@ export interface PlaybackState {
   seq: number
 }
 
+export interface RoomKeyword {
+  text: string
+  /** The player who added the keyword. */
+  playerId: string
+}
+
+/** The last random pack pick of the room. The server clears it when the host chooses a pack in a different way. */
+export interface RandomPickView {
+  /** True while the server looks for a pack. */
+  searching: boolean
+  modId: number | null
+  name: string | null
+  /** The keyword that the pack matches. Null for a pick from the whole catalog. */
+  keyword: string | null
+  /** How many usable packs match the keyword (or the whole catalog). */
+  matches: number
+}
+
 export interface RoomView {
   code: string
   hostId: string
@@ -272,6 +293,9 @@ export interface RoomView {
   pack: PackSummary | null
   packChoices: PackSummary[]
   job: JobView | null
+  /** Shared keyword list for the random pack pick. Every player can change it. */
+  keywords: RoomKeyword[]
+  randomPick: RandomPickView | null
   /** character name -> playerId */
   cast: Record<string, string>
   round: RoundView | null
@@ -316,6 +340,8 @@ export interface TimeSyncAck extends Ack {
 export const ClientEvents = {
   settingsUpdate: 'settings:update',
   packSelect: 'pack:select',
+  keywordAdd: 'keyword:add',
+  keywordRemove: 'keyword:remove',
   castAssign: 'cast:assign',
   castAuto: 'cast:auto',
   roundStart: 'round:start',
