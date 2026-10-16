@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useLocation } from 'wouter'
 import { MAX_NAME_LENGTH, ROOM_CODE_LENGTH, type RoomInfoResponse, type SessionResponse } from '@mcv/shared'
+import { PackCreatorLink } from '../components/ui'
 import { api, loadName, loadSession, saveName, saveSession } from '../lib/api'
 
 const PHASE_TEXT: Record<string, string> = {
@@ -129,6 +130,13 @@ export function HomeScreen({ joinCode }: { joinCode?: string }) {
           </button>
         </form>
       </div>
+
+      {!joinCode && (
+        <div className="home__creator">
+          <PackCreatorLink />
+          <p>Turn any video or YouTube link into a dub pack with the free Windows app.</p>
+        </div>
+      )}
 
       <footer className="home__footer">
         <p>

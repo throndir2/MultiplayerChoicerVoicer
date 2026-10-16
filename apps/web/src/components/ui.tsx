@@ -66,6 +66,16 @@ export function PlayerChip({ name, color, small }: { name: string; color: string
   )
 }
 
+export const PACK_CREATOR_URL = 'https://github.com/throndir2/ChoicerVoicerPackCreator'
+
+export function PackCreatorLink({ className = 'button' }: { className?: string }) {
+  return (
+    <a className={className} href={PACK_CREATOR_URL} target="_blank" rel="noreferrer">
+      🛠️ Create your own Choicer Voicer pack ↗
+    </a>
+  )
+}
+
 export function percent(value: number): string {
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`
 }
