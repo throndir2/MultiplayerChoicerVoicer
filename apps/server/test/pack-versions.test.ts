@@ -11,7 +11,7 @@ import { PackService } from '../src/packs/pack-service.js'
 import type { Media } from '../src/util/media.js'
 
 const work = mkdtempSync(path.join(tmpdir(), 'mcv-versions-'))
-afterAll(() => rmSync(work, { recursive: true, force: true }))
+afterAll(() => rmSync(work, { recursive: true, force: true, maxRetries: 3 }))
 
 const noop = () => undefined
 const log = { info: noop, warn: noop, error: noop, debug: noop } as unknown as FastifyBaseLogger
@@ -82,6 +82,12 @@ describe('pack versions', () => {
     const listed = service.listRecent()
     expect(listed.map((entry) => entry.id)).toEqual([fixedId, firstId])
     expect(new Set(listed.map((entry) => entry.versionKey)).size).toBe(1)
+
+    // The video step runs in the background. Let it finish before the folder is removed.
+    for (let tries = 0; tries < 100; tries += 1) {
+      if ([firstId, fixedId].every((id) => service.manifest(id as string)?.videoStatus === 'ready')) break
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
     await service.flush()
   })
 })
