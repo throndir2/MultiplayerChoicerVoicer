@@ -27,13 +27,24 @@ export interface AssetState {
   total: number
 }
 
+/** A file in the Cache Storage of the site. `path` is the URL path, for example `/media/packs/<id>/x.png`. */
+export interface StoredFile {
+  path: string
+  size: number
+  lastUsed: number
+}
+
 const CACHE_NAME = 'mcv-media-v1'
 const INDEX_KEY = 'mcv:asset-index'
-const MAX_AGE_MS = 7 * 24 * 3_600_000
+export const MAX_AGE_MS = 7 * 24 * 3_600_000
 const MAX_ACTIVE = 3
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function pathOf(url: string): string {
+  return new URL(url, window.location.href).pathname
 }
 
 class AssetStore {
@@ -45,6 +56,8 @@ class AssetStore {
   private index: Record<string, number> = {}
   private indexDirty = false
   version = 0
+  /** Goes up each time files are deleted, so the preloader requests the files of the room again. */
+  generation = 0
 
   constructor() {
     this.cache =
@@ -119,14 +132,54 @@ class AssetStore {
     }
   }
 
-  async clearAll(): Promise<void> {
-    for (const entry of this.entries.values()) if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl)
-    this.entries.clear()
-    this.index = {}
+  /** The files on disk, or null when the browser does not keep files for this site. */
+  async listStored(): Promise<StoredFile[] | null> {
+    const cache = await this.cache
+    if (!cache) return null
+    const files: StoredFile[] = []
+    for (const request of await cache.keys()) {
+      const path = new URL(request.url).pathname
+      let size = 0
+      try {
+        const response = await cache.match(request)
+        if (response) size = Number(response.headers.get('content-length')) || (await response.blob()).size
+      } catch {
+        size = 0
+      }
+      files.push({ path, size, lastUsed: this.index[path] ?? 0 })
+    }
+    return files
+  }
+
+  /**
+   * Deletes the files whose URL path matches, from the disk and from memory. Waiting and
+   * running downloads of these files stop. The preloader of an open room requests the
+   * files of the room again when `generation` changes.
+   */
+  async deleteFiles(match: (path: string) => boolean): Promise<void> {
+    for (const [url, entry] of this.entries) {
+      if (!match(pathOf(url))) continue
+      this.entries.delete(url)
+      if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl)
+      if (entry.status === 'queued' || entry.status === 'loading') entry.reject(new Error('cancelled'))
+    }
+    for (const path of Object.keys(this.index)) {
+      if (match(path)) delete this.index[path]
+    }
     this.indexDirty = true
     this.saveIndex()
-    if (typeof caches !== 'undefined') await caches.delete(CACHE_NAME).catch(() => false)
+    const cache = await this.cache
+    if (cache) {
+      for (const request of await cache.keys()) {
+        if (match(new URL(request.url).pathname)) await cache.delete(request).catch(() => false)
+      }
+    }
+    this.generation += 1
     this.notify()
+  }
+
+  clearAll(): Promise<void> {
+    return this.deleteFiles(() => true)
   }
 
   async usage(): Promise<{ usage: number; quota: number } | null> {
@@ -235,6 +288,11 @@ class AssetStore {
     }
   }
 
+  /** False after `deleteFiles` removed the entry: its result must not go back into the cache. */
+  private isCurrent(entry: Entry): boolean {
+    return this.entries.get(entry.url) === entry
+  }
+
   private async load(entry: Entry): Promise<void> {
     const cache = await this.cache
     try {
@@ -247,6 +305,7 @@ class AssetStore {
         }
       }
       const blob = await this.download(entry)
+      if (!this.isCurrent(entry)) return
       let stored: Blob = blob
       if (cache) {
         try {
@@ -254,6 +313,10 @@ class AssetStore {
             entry.url,
             new Response(blob, { headers: { 'content-type': blob.type, 'content-length': String(blob.size) } }),
           )
+          if (!this.isCurrent(entry)) {
+            await cache.delete(entry.url)
+            return
+          }
           // Re-reading gives a disk-backed blob, so the downloaded chunks can be freed.
           const again = await cache.match(entry.url)
           if (again) stored = await again.blob()
@@ -297,6 +360,10 @@ class AssetStore {
         if (length) entry.total = received + length
         const reader = response.body.getReader()
         for (;;) {
+          if (!this.isCurrent(entry)) {
+            void reader.cancel().catch(() => undefined)
+            throw new Error('cancelled')
+          }
           const { done, value } = await reader.read()
           if (done) break
           chunks.push(value)
@@ -307,7 +374,8 @@ class AssetStore {
         if (entry.total && received < entry.total) throw new Error('Connection closed early')
         return new Blob(chunks as BlobPart[], { type })
       } catch (error) {
-        if (error instanceof Error && error.message === 'not-found') throw error
+        if (error instanceof Error && (error.message === 'not-found' || error.message === 'cancelled')) throw error
+        if (!this.isCurrent(entry)) throw new Error('cancelled')
         await sleep(Math.min(15_000, 800 * 2 ** attempt))
       }
     }

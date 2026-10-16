@@ -13,6 +13,7 @@ import {
 } from '@mcv/shared'
 import { api } from './api'
 import { syncClock } from './clock'
+import { rememberPackName } from './storage'
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'unauthorized'
 export type EndReason = 'kicked' | 'closed' | null
@@ -150,6 +151,7 @@ export function loadManifest(packId: string, version: string): Promise<PackManif
     request = api<PackManifest>(`/api/packs/${encodeURIComponent(packId)}`)
       .then((value) => {
         manifestCache.set(key, value)
+        rememberPackName(value.id, value.title)
         return value
       })
       .catch(() => null)

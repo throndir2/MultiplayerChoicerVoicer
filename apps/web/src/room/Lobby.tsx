@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { ClientEvents, formatBytes, formatSeconds, type GameMode, type JobView, type RoomSettings } from '@mcv/shared'
 import { Modal, PlayerChip, ProgressBar, percent } from '../components/ui'
+import { StorageButton } from '../components/StoragePanel'
 import { assets } from '../lib/assets'
 import { useAssetsVersion } from '../lib/preload'
 import { useRoom } from '../lib/room'
+import { roomInUse } from '../lib/storage'
 import { Library } from './Library'
 import { JobProgress, PackLists, STAGE_TEXT } from './PackLists'
 import { PlayersPanel } from './PlayersPanel'
+import { KeywordsCard, RandomPickNote, useRandomPack } from './RandomPack'
 
 const MODES: { id: GameMode; icon: string; title: string; text: string }[] = [
   {
@@ -31,18 +34,33 @@ const MODES: { id: GameMode; icon: string; title: string; text: string }[] = [
 
 const STAGE_HINT = 'Check the pack now, for example its language. The host can cancel the download.'
 
-/** The pack that the server prepares: its name, its GameBanana page, pictures and text, and the host controls. */
-export function JobStatus({
-  job,
-  onCancel,
-  onFindAnother,
-}: {
-  job: JobView
-  onCancel?: (() => void) | undefined
-  onFindAnother?: (() => void) | undefined
-}) {
+/**
+ * The pack that the server prepares: its name, its GameBanana page, pictures and text, and the host controls.
+ * "Find another" gets a new random pack after a random pick. Otherwise it cancels and calls `onChoose`.
+ */
+export function JobStatus({ job, onChoose }: { job: JobView; onChoose?: (() => void) | undefined }) {
+  const { room, isHost, command, notify } = useRoom()
+  const random = useRandomPack()
   if (job.stage === 'ready') return null
   const failed = job.stage === 'error'
+  const randomPick = room.randomPick && !room.randomPick.searching ? room.randomPick : null
+
+  async function cancel(): Promise<boolean> {
+    try {
+      await command(ClientEvents.jobCancel)
+      return true
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not cancel')
+      return false
+    }
+  }
+
+  function findAnother() {
+    // The server stops the old download when the new pick replaces it.
+    if (randomPick) void random.roll()
+    else void cancel().then((ok) => ok && onChoose?.())
+  }
+
   return (
     <div className={`job${failed ? ' job--error' : ''}`}>
       <div className="job__title">
@@ -72,18 +90,16 @@ export function JobStatus({
           )}
         </div>
       )}
-      {onCancel || onFindAnother ? (
+      {isHost ? (
         <div className="button-row job__actions">
-          {onFindAnother && (
-            <button type="button" className="button button--small" onClick={onFindAnother}>
-              🔍 Find another pack
+          {(randomPick || onChoose) && (
+            <button type="button" className="button button--small" disabled={random.searching} onClick={findAnother}>
+              {randomPick ? '🎲 Another random pack' : '🔍 Find another pack'}
             </button>
           )}
-          {onCancel && (
-            <button type="button" className="button button--small button--ghost" onClick={onCancel}>
-              {failed ? 'Dismiss' : '✕ Cancel'}
-            </button>
-          )}
+          <button type="button" className="button button--small button--ghost" onClick={() => void cancel()}>
+            {failed ? 'Dismiss' : '✕ Cancel'}
+          </button>
         </div>
       ) : (
         !failed && <p className="hint">{STAGE_HINT}</p>
@@ -92,15 +108,7 @@ export function JobStatus({
   )
 }
 
-function PackCard({
-  onChoose,
-  onCancelJob,
-  onFindAnother,
-}: {
-  onChoose: () => void
-  onCancelJob: () => void
-  onFindAnother: () => void
-}) {
+function PackCard({ onChoose }: { onChoose: () => void }) {
   const { room, manifest, isHost, command, notify, me } = useRoom()
   const [preview, setPreview] = useState(false)
   useAssetsVersion()
@@ -129,17 +137,13 @@ function PackCard({
           </button>
         ) : null}
       </div>
-      {job && (
-        <JobStatus
-          job={job}
-          onCancel={isHost ? onCancelJob : undefined}
-          onFindAnother={isHost ? onFindAnother : undefined}
-        />
-      )}
+      {job && <JobStatus job={job} onChoose={isHost ? onChoose : undefined} />}
+      {/* While a job runs, "Another random pack" is in the job controls. */}
+      <RandomPickNote withButton={!job} />
       {!pack && !job && (
         <p className="muted">
           {isHost
-            ? 'Choose a pack from GameBanana, from the packs on this server, or upload your own.'
+            ? 'Choose a pack from GameBanana, from the packs on this server, or upload your own. Or get a random pack from keywords below.'
             : 'The host has not chosen a pack yet.'}
         </p>
       )}
@@ -207,17 +211,11 @@ function PackCard({
                 : `Downloaded to this device: ${formatBytes(downloaded)} of ${formatBytes(totalBytes)}${manifest.videoUrl ? '' : ' (video comes later)'}`
             }
           />
-          <button
-            type="button"
+          <StorageButton
             className="button button--tiny button--ghost"
-            onClick={() => {
-              if (window.confirm('Delete all pack files and recordings that this browser has downloaded?')) {
-                void assets.clearAll().then(() => window.location.reload())
-              }
-            }}
-          >
-            Clear downloaded files
-          </button>
+            label="Manage downloaded files"
+            inUse={roomInUse(room)}
+          />
         </div>
       )}
       {manifest?.readme && (
@@ -317,7 +315,7 @@ export function Lobby() {
   const [library, setLibrary] = useState(false)
   const [starting, setStarting] = useState(false)
   const pack = room.pack
-  const jobBusy = room.job && room.job.stage !== 'ready' && room.job.stage !== 'error'
+  const jobBusy = (room.job && room.job.stage !== 'ready' && room.job.stage !== 'error') || room.randomPick?.searching
   const active = room.players.filter((player) => player.connected && !player.spectator)
   const host = room.players.find((player) => player.id === room.hostId)
 
@@ -345,23 +343,6 @@ export function Lobby() {
     void command(ClientEvents.settingsUpdate, patch).catch((error: Error) => notify(error.message))
   }
 
-  async function cancelJob(): Promise<boolean> {
-    try {
-      await command(ClientEvents.jobCancel)
-      return true
-    } catch (error) {
-      notify(error instanceof Error ? error.message : 'Could not cancel')
-      return false
-    }
-  }
-
-  /** Cancel the pack that the server prepares, then choose a different pack. */
-  function findAnother() {
-    void cancelJob().then((ok) => {
-      if (ok) setLibrary(true)
-    })
-  }
-
   return (
     <div className="lobby">
       <aside className="lobby__side">
@@ -382,12 +363,9 @@ export function Lobby() {
         )}
       </aside>
       <div className="lobby__main">
-        <PackCard
-          onChoose={() => setLibrary(true)}
-          onCancelJob={() => void cancelJob()}
-          onFindAnother={findAnother}
-        />
+        <PackCard onChoose={() => setLibrary(true)} />
         <PackLists />
+        <KeywordsCard />
         <section className="card">
           <h2>Game mode</h2>
           <div className="modes">

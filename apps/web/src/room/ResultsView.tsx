@@ -5,6 +5,7 @@ import { useRoom } from '../lib/room'
 import { DubPlayer } from './DubPlayer'
 import { PackLists } from './PackLists'
 import { dubTitle } from './PlaybackView'
+import { KeywordsCard } from './RandomPack'
 import { WatchModal } from './VotingView'
 
 function ExportButton({ dub }: { dub: DubView }) {
@@ -85,6 +86,9 @@ export function ResultsView() {
   )
   const best = tally.get(ranked[0]?.id ?? '')?.length ?? 0
   const winners = best > 0 ? ranked.filter((dub) => (tally.get(dub.id)?.length ?? 0) === best) : []
+  const nextPack = room.pack && room.pack.id !== round.packId ? room.pack : null
+  const packBusy =
+    Boolean(room.job && room.job.stage !== 'ready' && room.job.stage !== 'error') || Boolean(room.randomPick?.searching)
 
   return (
     <div className="results">
@@ -96,8 +100,14 @@ export function ResultsView() {
               <button type="button" className="button" onClick={() => run(ClientEvents.phaseSet, { phase: 'playback' })}>
                 Watch together again
               </button>
-              <button type="button" className="button button--primary" onClick={() => run(ClientEvents.roundStart)}>
-                Play again with this pack
+              <button
+                type="button"
+                className="button button--primary"
+                disabled={packBusy}
+                title={packBusy ? 'Wait until the new pack is ready' : undefined}
+                onClick={() => run(ClientEvents.roundStart)}
+              >
+                {nextPack ? `Play “${nextPack.title}”` : 'Play again with this pack'}
               </button>
               {room.queue[0] && (
                 <button
@@ -174,6 +184,7 @@ export function ResultsView() {
           </ol>
         )}
       </section>
+      <KeywordsCard showPack />
       {me && (
         <label className="toggle card">
           <input

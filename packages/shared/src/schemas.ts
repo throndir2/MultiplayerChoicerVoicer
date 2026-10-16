@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { MAX_NAME_LENGTH, ROOM_CODE_LENGTH } from './types.js'
+import { MAX_KEYWORDS, MAX_KEYWORD_LENGTH, MAX_NAME_LENGTH, ROOM_CODE_LENGTH } from './types.js'
 
 export const displayNameSchema = z
   .string()
@@ -34,8 +34,27 @@ export const sourceRequestSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('url'), url: z.string().url().max(2000) }),
   z.object({ kind: z.literal('pack'), packId: z.string().min(1).max(80) }),
+  /** A random GameBanana pack that matches one of the room keywords. */
+  z.object({ kind: z.literal('random') }),
 ])
 export type SourceRequest = z.infer<typeof sourceRequestSchema>
+
+/** Splits typed text into keywords at commas, semicolons and new lines. Removes duplicates (case-insensitive). */
+export function parseKeywords(text: string): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const part of text.split(/[,;\n]/)) {
+    const keyword = part.replace(/\s+/g, ' ').trim().slice(0, MAX_KEYWORD_LENGTH).trim()
+    const key = keyword.toLowerCase()
+    if (!keyword || seen.has(key)) continue
+    seen.add(key)
+    result.push(keyword)
+  }
+  return result
+}
+
+export const keywordAddSchema = z.object({ text: z.string().min(1).max(MAX_KEYWORDS * (MAX_KEYWORD_LENGTH + 2)) })
+export const keywordRemoveSchema = z.object({ keyword: z.string().min(1).max(MAX_KEYWORD_LENGTH * 2) })
 
 export const packSelectSchema = z.object({ packId: z.string().min(1).max(80) })
 export const entryTargetSchema = z.object({ id: z.string().min(1).max(32) })

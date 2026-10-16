@@ -37,6 +37,40 @@ During the final playback, the game mutes the clip. It plays the backing track a
 | Direct link | A player can paste a direct archive link. Only hosts on an allow list are accepted (GitHub, Dropbox, Google Drive, Discord CDN, GameBanana). This prevents server-side request forgery into the home network. |
 | Upload | A player can upload an archive (`.zip`, `.7z`, `.rar`) or a pack folder. The upload uses resumable 8 MB chunks, so slow connections can continue after an error. |
 | Recently used | Packs that the server already processed show in a separate tab. They start immediately. |
+| Random pack from keywords | The players type keywords. The server picks a random GameBanana pack that matches one of them (see below). |
+
+### Random pack from keywords
+
+The random pack is a way to choose a pack, not a game mode. It works with every game mode (Versus, Cast and Chaos).
+
+- The lobby and the results page show a shared keyword list. Every player can add and remove keywords, for example a show, a game or a character. A player can type several keywords, separated with commas. The list has a maximum of 20 keywords. Each chip shows the colour of the player who added it.
+- The host presses "🎲 Random pack". The server then:
+  1. finds the catalog packs that match each keyword (every word of the keyword must be in the name, the submitter or the category). Without keywords, every pack matches;
+  2. removes rated packs, and mods that have no usable archive;
+  3. removes the packs that the room already played or picked, and the current pack. If no other pack matches, it uses the played packs again;
+  4. chooses a random keyword, then a random pack for that keyword. So each keyword has the same chance, also when one keyword matches many more packs than another;
+  5. reads the files of the mod and takes the most downloaded archive between 100 KB and the download limit. A smaller archive is only a note or a link. If the mod has no such file, the server tries a different pack (up to 6 mods);
+  6. starts the normal GameBanana job for that file.
+- The pack card shows "Random pick for “keyword”" and how many packs match. The host can press "🎲 Another random pack" at any time, also while the pack downloads.
+- Some GameBanana mods contain no Choicer Voicer pack. If the job of a random pick fails, the server marks the mod as unusable and picks another pack automatically, up to 3 times for each press of the button.
+- On the results page, a new random pack becomes the next pack. The start button then shows "Play “title”".
+- The room keeps the keywords and the played mods in `rooms.json`.
+
+### Suggestions and the queue
+
+- **Suggestions.** Every player can suggest a pack ("💡 Suggest a pack" in the "Next packs" card of the lobby and the results page). The Library opens with the GameBanana, "On this server" and "Link" tabs. Everybody sees each suggestion with its picture, its GameBanana link and the player who suggested it. The host can use it now, put it in the queue, or remove it. The player who suggested a pack can also remove it. A room has a maximum of 30 suggestions.
+- **Queue.** The host can add packs to the queue ("➕ Add to the queue", or "Queue" on a suggestion). The server starts the download and the processing of each queued pack immediately, in the background (at most 2 jobs at the same time, as for all jobs). When a queued pack is ready, the browsers download its files after all the files of the current pack (see section 9). Each queue entry shows the server progress, then how much of the pack is on this device. The queue has a maximum of 10 packs.
+- **Use a queued pack.** "▶ Use now" makes the queued pack the current pack. If the server has not finished it, the room waits for its job. On the results page, the host has the button "⏭ Next pack: title". It takes the first queued pack and goes back to the lobby. Using a suggestion or a queued pack on the results page always goes back to the lobby.
+- **Remove from the queue.** "✕ Remove" takes the pack out of the queue. The server stops its job if no other room and no other queue needs it.
+- The room keeps the suggestions and the queue in `rooms.json`. After a server restart, the server starts the jobs of the queued packs that were not ready again.
+
+### While the server prepares a pack
+
+- The pack card shows the name of the pack, the stage and the progress, up to 3 preview pictures, the text from GameBanana and the link "Open on GameBanana ↗". So the group can check the pack early, for example its language.
+- The host has two controls:
+  - **✕ Cancel** stops the download and forgets the pack. The server aborts the download, the extraction and the processing, and deletes the files of the job, when no other room or queue needs the job. For a job that failed, the button is "Dismiss".
+  - **🔍 Find another pack** cancels the pack and opens the Library. After a random pick, the button is "🎲 Another random pack" and gets a new random pack instead.
+- When the host chooses a different pack while a pack downloads, the server also stops the old job if nobody needs it.
 
 The home screen and the "Upload" tab have a "Create your own Choicer Voicer pack" button. It opens [ChoicerVoicerPackCreator](https://github.com/throndir2/ChoicerVoicerPackCreator), a free Windows app that makes a pack from a video or a YouTube link.
 
@@ -66,7 +100,7 @@ The server runs one video conversion at a time, because Nahida has a small CPU.
 
 - A player creates a room and gets a 5-character code (no 0, O, 1, I or L). The invite link is `https://<host>/join/<CODE>`.
 - The player token is a random 32-byte value. The browser keeps it in `sessionStorage`. Each tab is a different player, which makes testing easy. If a player closes the tab, they can join again with the same name. They then get the same seat back if that seat is disconnected.
-- The creator is the host. The host chooses the pack, the mode and the cast. The host can remove players and can give the host role to a different player. If the host is away for 60 seconds, the next connected player becomes the host.
+- The creator is the host. The host chooses the pack, the mode and the cast. Every player can add keywords for a random pack and suggest packs. Only the host can use a suggestion, change the queue or cancel a download. The host can remove players and can give the host role to a different player. If the host is away for 60 seconds, the next connected player becomes the host.
 - The rooms are kept in memory and written to `rooms.json`, so a restart does not lose them. A room without connected players for 6 hours is deleted together with its recordings.
 
 ## 6. Game modes
@@ -79,7 +113,7 @@ All modes use one general model. A round has one or more **dubs**. A dub maps ea
 | **Cast** | One shared dub | The host gives characters to players. "Auto-cast" balances the characters by speaking time | Watch the ensemble dub |
 | **Chaos** | One shared dub | Lines are shuffled and shared equally | Watch the ensemble dub |
 
-A line with more than one character goes to the player of the first assigned character. A setting fills missing lines with the original prompt audio (for example, the lines of a player whom the host removed). A player who joins during a Versus round can join in with a new dub. In the other modes, a late player watches. On the results page, the host can start a new round with the same pack or go back to the lobby, as many times as the group wants. A watcher can clear "I only want to watch" on the results page to take part in the next round.
+A line with more than one character goes to the player of the first assigned character. A setting fills missing lines with the original prompt audio (for example, the lines of a player whom the host removed). A player who joins during a Versus round can join in with a new dub. In the other modes, a late player watches. On the results page, the host can start a new round with the same pack, get a random pack from the keywords for the next round, or go back to the lobby, as many times as the group wants. A watcher can clear "I only want to watch" on the results page to take part in the next round.
 
 The host sets two more options in the lobby. They apply to the next round and cannot change during a round.
 
@@ -94,6 +128,7 @@ The host sets two more options in the lobby. They apply to the next round and ca
 
 - The player sees the character, the caption and the length of the original line. The picture is a default picture, or the line image when "Show the scene while recording" is on.
 - "Play original" plays the prompt. When "Show the scene while recording" is on and the video is downloaded, the player sees the real scene too.
+- When the player goes to another line (Next, Previous, the line list, or the `N` and `B` keys), the original line plays one time automatically, the same as "Play original". The first line of the round does not play by itself. "Record" stops the playback, and a playback that still loads does not start after a stop, a recording or a line change. "Play the original line when I go to a line" (in the Microphone card, default on, saved in the browser) turns this off.
 - "Record" always starts a 1.5 s countdown. The recording then runs for exactly the length of the original line and stops automatically. It is never longer than the original line. The server also cuts each take to the length of the original line after it trims the silence.
 - "Original voice while recording" (in the Microphone card, 0 to 100 %, default 30 %, saved in the browser) sets the volume of the original line during a recording. When it is above 0, the original line plays at that volume after the countdown. When the scene option is on, the muted video plays too. The player must use headphones, or the microphone also records the original line. At 0 %, the original line does not play during a recording.
 - The waveform shows the take on top of the original line on one time line, so the player can compare the timing directly. Each device pixel column shows the minimum and maximum of the samples (the peaks) and a brighter loudness (RMS) core. While the player records, the browser captures every microphone sample with an AudioWorklet and draws the live signal on top of the original line, which is shown where it plays (after the countdown).
@@ -124,13 +159,21 @@ Yes. A website can store large files without a download prompt. The files do not
 - Chrome and Edge allow a site to use up to about 60% of the free disk space. Firefox allows about 10%. Safari allows about 1 GB before it asks. A typical pack is 5 MB to 300 MB after processing.
 - The client calls `navigator.storage.persist()` so that the browser does not remove the files while a game runs.
 - The **asset manager** in the client:
-  1. downloads files in priority order: the images and prompts for my lines first, then recordings from other players, then the backing track, then the video;
+  1. downloads files in priority order: the images and prompts for my lines first, then recordings from other players, then the backing track, then the video. The files of the queued packs come last, in queue order;
   2. downloads at most 3 files at the same time;
   3. continues a failed download from the last byte with an HTTP `Range` request (important on slow or unstable connections);
   4. starts as soon as the host selects a pack, and gets each new recording of another player as soon as the server announces it;
   5. reports its progress to the server, so the room shows how ready each player is;
   6. removes files that were not used for 7 days.
 - If the video is not completely downloaded when playback starts, the video streams from the server, and the audio still plays from the local copy.
+- **Downloaded files panel.** A player can see and delete the stored files without the developer tools of the browser. The panel opens from the "💾 Downloaded files" button on the home page, from the 💾 button in the top bar of a room, and from "Manage downloaded files" in the lobby. The panel:
+  1. tells the player that the files are in the private storage of the site in the browser, not in the Downloads folder, and that unused files go after 7 days;
+  2. shows the total size, and one row for each pack (with its name, size, number of files and last use) and one row for the recordings of players;
+  3. has a "Delete" button for each row and a "Delete all" button;
+  4. marks the packs and recordings that the open room uses. If the player deletes them, the files download again at once, because the room needs them;
+  5. has the option "Delete all downloaded files when I leave a room". The files go when the player leaves the room in the site. If the player closes the tab in a room, the files go at the next visit, unless that visit goes back into the same room (a reload).
+- A delete removes the files from the Cache Storage, from the index of last use and from the memory of the asset manager. Running downloads of the deleted files stop and do not write to the cache. The preloader of an open room then requests the files of the room again. The page does not reload.
+- The client remembers the name of each pack in `localStorage`, so the panel can show names. For older files, the panel asks the server for the name.
 
 ## 10. Architecture
 

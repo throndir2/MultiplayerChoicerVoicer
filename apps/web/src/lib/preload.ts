@@ -47,6 +47,7 @@ export function usePreloader(
   emit: (event: string, payload: unknown) => void,
 ): void {
   const version = useAssetsVersion()
+  const generation = assets.generation
   const round = room.round && manifest && room.round.packId === manifest.id ? room.round : null
   const myLineKey = round
     ? round.dubs
@@ -83,7 +84,7 @@ export function usePreloader(
     assets.prefetch(manifest.backingUrl, 30, manifest.backingBytes)
     assets.prefetch(manifest.iconUrl, 15)
     if (manifest.videoUrl) assets.prefetch(manifest.videoUrl, 50, manifest.videoBytes)
-  }, [manifest, myLineKey, round, queueKey])
+  }, [manifest, myLineKey, round, queueKey, generation])
 
   // Queued packs download after every file of the current pack, in queue order.
   useEffect(() => {
@@ -106,7 +107,7 @@ export function usePreloader(
     return () => {
       cancelled = true
     }
-  }, [queueKey])
+  }, [queueKey, generation])
 
   const recordingKey = round
     ? round.dubs.flatMap((dub) => Object.values(dub.recordings).map((recording) => recording.url)).join('|')
@@ -114,7 +115,7 @@ export function usePreloader(
   useEffect(() => {
     if (!recordingKey) return
     for (const url of recordingKey.split('|')) assets.prefetch(url, 25)
-  }, [recordingKey])
+  }, [recordingKey, generation])
 
   useEffect(() => {
     if (round) void assets.persist()
