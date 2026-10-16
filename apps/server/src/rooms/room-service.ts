@@ -18,6 +18,7 @@ import {
   playbackPosition,
   unfinishedPlayers,
   type AssetStatus,
+  type DubExportFormat,
   type DubView,
   type GameMode,
   type JobView,
@@ -46,6 +47,7 @@ import { isHostAllowed } from '../util/download.js'
 import { ensureDir, readJson, removeDir, writeJsonAtomic } from '../util/fsx.js'
 import { createRoomCode, createToken, hashToken, randomId, shuffle } from '../util/ids.js'
 import type { Media } from '../util/media.js'
+import { writeZip, type ZipEntry } from '../util/zip.js'
 import { pickRandomPack } from './random-pack.js'
 
 /** An error whose message is safe to show to the player. */
@@ -169,6 +171,42 @@ export function autoCast(
   return result
 }
 
+/** A folder name that Windows accepts. */
+function safeFolderName(name: string): string {
+  return name
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .replace(/[. ]+$/, '')
+    .trim()
+}
+
+/** The folder of the pack in `packs_voice`. The game keeps the takes of a pack in the same path in `dub_recordings`. */
+export function gamePackFolder(manifest: Pick<PackManifest, 'folder' | 'title'>): string {
+  const parts = (manifest.folder ?? '').split('/').map(safeFolderName).filter(Boolean)
+  if (parts.length > 0) return parts.join('/')
+  return safeFolderName(manifest.title) || 'Pack'
+}
+
+function gameReadme(manifest: PackManifest, dubName: string, folder: string, session: string): string {
+  const windowsFolder = folder.replace(/\//g, '\\')
+  return [
+    `Choicer Voicer takes: ${manifest.title} (${dubName})`,
+    '',
+    'This ZIP contains the takes of a dub from Multiplayer Choicer Voicer.',
+    'The takes use the recording format of the Choicer Voicer game: one WAV file for each line, with the name _dubrecord_<line>.wav.',
+    '',
+    'To play the dub in the game:',
+    `1. Install the pack "${manifest.title}" in the game. Put it in the folder %APPDATA%\\YeahMaybe\\ChoicerVoicer\\game\\packs_voice\\${windowsFolder}`,
+    '2. Open the folder %APPDATA%\\YeahMaybe\\ChoicerVoicer\\game\\recordings\\dub_recordings',
+    `3. Extract this ZIP into that folder. The takes go into dub_recordings\\${windowsFolder}\\${session}`,
+    '4. If the pack has a different folder name in packs_voice, give the folder of the takes the same name.',
+    '5. Start the game, open the pack and click the saved recordings button.',
+    '',
+    'The Choicer Voicer Pack Creator can also play these takes and export them as a video (Tools > Recordings):',
+    'https://github.com/throndir2/ChoicerVoicerPackCreator',
+    '',
+  ].join('\r\n')
+}
+
 export function buildDubs(
   manifest: PackManifest,
   mode: GameMode,
@@ -182,6 +220,7 @@ export function buildDubs(
     assignments: {},
     recordings: {},
     export: { status: 'idle', progress: 0 },
+    gameExport: { status: 'idle', progress: 0 },
   })
   if (mode === 'versus') {
     return players.map((player) => {
@@ -278,6 +317,7 @@ export class RoomService extends EventEmitter {
       }
       for (const dub of room.round?.dubs ?? []) {
         if (dub.export.status === 'rendering') dub.export = { status: 'idle', progress: 0 }
+        if (!dub.gameExport || dub.gameExport.status === 'rendering') dub.gameExport = { status: 'idle', progress: 0 }
       }
       this.rooms.set(room.code, room)
       for (const player of room.players) this.tokens.set(player.tokenHash, { code: room.code, playerId: player.id })
@@ -1372,6 +1412,7 @@ export class RoomService extends EventEmitter {
     }
     current.recordings[lineId] = recording
     current.export = { status: 'idle', progress: 0 }
+    current.gameExport = { status: 'idle', progress: 0 }
     this.changed(room)
     return recording
   }
@@ -1397,12 +1438,16 @@ export class RoomService extends EventEmitter {
     }
   }
 
-  exportDub(code: string, actorId: string, dubId: string): void {
+  exportDub(code: string, actorId: string, dubId: string, format: DubExportFormat = 'video', timezoneOffset = 0): void {
     const room = this.get(code)
     if (!room.players.some((player) => player.id === actorId)) throw new RoomError('Unknown player')
     const round = room.round
     const dub = round?.dubs.find((entry) => entry.id === dubId)
     if (!round || !dub) throw new RoomError('Unknown dub', 404)
+    if (format === 'game') {
+      this.exportGameTakes(room, round, dub, timezoneOffset)
+      return
+    }
     if (dub.export.status === 'rendering' || dub.export.status === 'ready') return
     const manifest = this.packs.manifest(round.packId)
     if (!manifest || manifest.videoStatus !== 'ready') throw new RoomError('The video is not ready yet')
@@ -1448,6 +1493,67 @@ export class RoomService extends EventEmitter {
       } catch (error) {
         this.log.warn({ err: error }, 'dub export failed')
         dub.export = { status: 'error', progress: 0, error: 'The export failed' }
+      }
+      if (this.rooms.has(room.code)) this.changed(room)
+    })
+  }
+
+  /**
+   * Makes a ZIP with the takes of a dub in the recording format of the Choicer Voicer game:
+   * `<pack folder>/<YYYY-MM-DD HH-MM-SS>/_dubrecord_<line file>.wav`. The game plays each WAV at the
+   * `dub_timestamps` of its line, as we do. A line without a take gets the original line when the room fills
+   * missing lines, so the ZIP sounds like the dub that the players watched.
+   */
+  private exportGameTakes(room: RoomRecord, round: RoundView, dub: DubView, timezoneOffset: number): void {
+    if (dub.gameExport.status === 'rendering' || dub.gameExport.status === 'ready') return
+    const manifest = this.packs.manifest(round.packId)
+    if (!manifest) throw new RoomError('The pack is not on the server any more')
+    if (manifest.lines.some((line) => !line.file)) {
+      throw new RoomError('This pack was prepared before the server kept the file names of the lines. This download is not available for it.')
+    }
+    const fillMissing = room.settings.fillMissingWithOriginal
+    const takes = manifest.lines.flatMap((line) => {
+      const url = dub.recordings[line.id]?.url ?? (fillMissing ? line.promptUrl : null)
+      const source = url ? this.mediaPath(url) : null
+      return source ? [{ file: (line.file as string).replace(/[\\/]/g, '_'), source }] : []
+    })
+    if (takes.length === 0) throw new RoomError('This dub has no takes')
+    dub.gameExport = { status: 'rendering', progress: 0 }
+    this.changed(room)
+    this.exportChain = this.exportChain.then(async () => {
+      const dir = path.join(this.roomDir(room), 'export')
+      const work = path.join(dir, `game-${randomId(6)}`)
+      const fileName = `${dub.id}-${randomId(5)}.zip`
+      let lastEmit = 0
+      try {
+        await ensureDir(work)
+        // The game names a take folder with the local date and time of the take.
+        const newest = Math.max(round.startedAt, ...Object.values(dub.recordings).map((recording) => recording.createdAt))
+        const local = new Date(newest - timezoneOffset * 60_000)
+        const session = local.toISOString().slice(0, 19).replace('T', ' ').replace(/:/g, '-')
+        const folder = gamePackFolder(manifest)
+        const entries: ZipEntry[] = []
+        for (const [index, take] of takes.entries()) {
+          const wav = path.join(work, `${index}.wav`)
+          await this.media.audioToGameWav(take.source, wav)
+          entries.push({ name: `${folder}/${session}/_dubrecord_${take.file}.wav`, file: wav })
+          dub.gameExport.progress = ((index + 1) / takes.length) * 0.95
+          const now = Date.now()
+          if (now - lastEmit > 1500) {
+            lastEmit = now
+            this.emit('state', room.code)
+          }
+        }
+        const names = new Map(room.players.map((player) => [player.id, player.name]))
+        const dubName = dub.ownerId ? `${names.get(dub.ownerId) ?? dub.name}'s dub` : dub.name
+        entries.unshift({ name: 'README.txt', data: Buffer.from(gameReadme(manifest, dubName, folder, session), 'utf8') })
+        await writeZip(path.join(dir, fileName), entries, local)
+        dub.gameExport = { status: 'ready', progress: 1, url: `/media/rooms/${room.id}/export/${fileName}` }
+      } catch (error) {
+        this.log.warn({ err: error }, 'game takes export failed')
+        dub.gameExport = { status: 'error', progress: 0, error: 'The export failed' }
+      } finally {
+        await removeDir(work).catch(() => undefined)
       }
       if (this.rooms.has(room.code)) this.changed(room)
     })

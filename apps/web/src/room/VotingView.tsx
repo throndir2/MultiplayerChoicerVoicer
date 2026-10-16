@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ClientEvents, type DubView } from '@mcv/shared'
 import { Modal, PlayerChip } from '../components/ui'
 import { useRoom } from '../lib/room'
+import { DubDownloads } from './DubDownloads'
 import { DubPlayer } from './DubPlayer'
 import { dubTitle } from './PlaybackView'
 
@@ -9,6 +10,8 @@ export function WatchModal({ dub, onClose }: { dub: DubView; onClose: () => void
   const { room, roundManifest } = useRoom()
   const names = new Map(room.players.map((player) => [player.id, player.name]))
   if (!roundManifest) return null
+  // The room state changes while the modal is open (for example the export progress), so show the newest dub.
+  const current = room.round?.dubs.find((entry) => entry.id === dub.id) ?? dub
   return (
     <Modal title={dubTitle(dub, names)} onClose={onClose} wide>
       <DubPlayer
@@ -18,6 +21,9 @@ export function WatchModal({ dub, onClose }: { dub: DubView; onClose: () => void
         players={room.players}
         autoPlay
       />
+      <div className="button-row">
+        <DubDownloads dub={current} title={dubTitle(current, names)} />
+      </div>
     </Modal>
   )
 }

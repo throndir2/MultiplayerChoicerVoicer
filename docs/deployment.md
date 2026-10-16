@@ -25,7 +25,7 @@ The data volume contains:
 - `rooms.json`: the open rooms.
 - `packs-index.json`: the processing jobs and the last use of each pack.
 - `media/packs/<packId>/`: the processed packs (cache, limited by `PACK_CACHE_MAX_GB`).
-- `media/rooms/<roomId>/`: the recordings and the exported videos of each room.
+- `media/rooms/<roomId>/`: the recordings and the exported videos and take ZIPs of each room.
 
 ## First release
 

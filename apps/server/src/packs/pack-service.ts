@@ -68,6 +68,19 @@ function sourceRank(source: PackSourceInfo): number {
   return source.public ? 1 : 0
 }
 
+/** The path of a pack folder below the download or upload root, as the player has it in `packs_voice`. */
+function packFolder(root: string, dir: string): string {
+  const parts = path
+    .relative(root, dir)
+    .split(path.sep)
+    .filter((part) => part && part !== '.')
+  const inner = parts.filter((part) => !part.endsWith('_extracted'))
+  if (inner.length > 0) return inner.join('/')
+  // The pack files were at the top of an uploaded archive: players extract it to a folder with its name.
+  const archive = parts[parts.length - 1]
+  return archive ? archive.slice(0, -'_extracted'.length).replace(/\.[^.]+$/, '') : ''
+}
+
 export function toSummary(manifest: PackManifest): PackSummary {
   return {
     id: manifest.id,
@@ -478,6 +491,17 @@ export class PackService extends EventEmitter {
           const same = this.findByHash(fingerprint.hash)
           if (same) {
             await this.reuse(same, job.source)
+            if (same.lines.some((line) => !line.file)) {
+              // Packs from before the line file names were kept. The same files give the same line order.
+              const raw = await readPack(dir)
+              if (raw.lines.length === same.lines.length) {
+                same.lines.forEach((line, lineIndex) => {
+                  line.file = raw.lines[lineIndex]?.name
+                })
+                same.folder ??= packFolder(root, dir)
+                await this.writeManifest(same)
+              }
+            }
             if (!ids.includes(same.id)) ids.push(same.id)
             this.log.info({ packId: same.id, job: job.key }, 'the same pack is already on the server')
             continue
@@ -492,6 +516,7 @@ export class PackService extends EventEmitter {
             outDir,
             media: this.media,
             fingerprint,
+            folder: packFolder(root, dir),
             onProgress: (fraction) => this.update(job, { progress: (index + fraction) / dirs.length }),
           })
           signal.throwIfAborted()

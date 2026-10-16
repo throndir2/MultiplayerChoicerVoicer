@@ -72,6 +72,7 @@ describe('dubMatchScores', () => {
     assignments: { L1: 'a', L2: 'a', L3: 'b', L4: 'b' },
     recordings: { L1: recording('a', 80), L2: recording('a', 60), L3: recording('b', 90) },
     export: { status: 'idle', progress: 0 },
+    gameExport: { status: 'idle', progress: 0 },
   }
 
   it('averages the lines of each player and counts a missing take as 0', () => {

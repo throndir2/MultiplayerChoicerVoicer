@@ -1,38 +1,13 @@
 import { useState } from 'react'
 import { ClientEvents, dubMatchScore, dubMatchScores, type DubView } from '@mcv/shared'
-import { PlayerChip, ProgressBar, ScoreBadge, percent } from '../components/ui'
+import { PlayerChip, ScoreBadge } from '../components/ui'
 import { useRoom } from '../lib/room'
+import { DubDownloads } from './DubDownloads'
 import { DubPlayer } from './DubPlayer'
 import { PackLists } from './PackLists'
 import { dubTitle } from './PlaybackView'
 import { KeywordsCard } from './RandomPack'
 import { WatchModal } from './VotingView'
-
-function ExportButton({ dub }: { dub: DubView }) {
-  const { command, notify, roundManifest } = useRoom()
-  const state = dub.export
-  if (state.status === 'ready' && state.url) {
-    return (
-      <a className="button button--small" href={state.url} download>
-        ⬇ Download MP4
-      </a>
-    )
-  }
-  if (state.status === 'rendering') {
-    return <ProgressBar small value={state.progress} label={`Making the video ${percent(state.progress)}`} />
-  }
-  return (
-    <button
-      type="button"
-      className="button button--small"
-      disabled={roundManifest?.videoStatus !== 'ready'}
-      title={roundManifest?.videoStatus !== 'ready' ? 'The video is not converted yet' : undefined}
-      onClick={() => void command(ClientEvents.dubExport, { dubId: dub.id }).catch((error: Error) => notify(error.message))}
-    >
-      {state.status === 'error' ? 'Try the export again' : '🎞 Export as video'}
-    </button>
-  )
-}
 
 function MatchScores({ dub }: { dub: DubView }) {
   const { room } = useRoom()
@@ -148,7 +123,7 @@ export function ResultsView() {
               players={room.players}
             />
             <div className="button-row">
-              <ExportButton dub={single} />
+              <DubDownloads dub={single} title={dubTitle(single, names)} />
             </div>
             <MatchScores dub={single} />
           </>
@@ -176,7 +151,7 @@ export function ResultsView() {
                     <button type="button" className="button button--small" onClick={() => setWatching(dub)}>
                       ▶ Watch
                     </button>
-                    <ExportButton dub={dub} />
+                    <DubDownloads dub={dub} title={dubTitle(dub, names)} />
                   </div>
                 </li>
               )

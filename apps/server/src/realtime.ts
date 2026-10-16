@@ -7,7 +7,7 @@ import {
   ServerEvents,
   assetStatusSchema,
   castAssignSchema,
-  dubTargetSchema,
+  dubExportSchema,
   entryTargetSchema,
   keywordAddSchema,
   keywordRemoveSchema,
@@ -177,7 +177,9 @@ export function attachRealtime(httpServer: HttpServer, rooms: RoomService, log: 
       rooms.playbackControl(code, playerId, action, dubId, position),
     )
     command(ClientEvents.voteCast, voteSchema, ({ dubId }) => rooms.vote(code, playerId, dubId))
-    command(ClientEvents.dubExport, dubTargetSchema, ({ dubId }) => rooms.exportDub(code, playerId, dubId))
+    command(ClientEvents.dubExport, dubExportSchema, ({ dubId, format, timezoneOffset }) =>
+      rooms.exportDub(code, playerId, dubId, format, timezoneOffset),
+    )
 
     socket.on(ClientEvents.progressUpdate, (payload: unknown) => {
       const parsed = progressUpdateSchema.safeParse(payload)

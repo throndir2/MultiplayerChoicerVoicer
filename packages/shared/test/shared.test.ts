@@ -79,6 +79,7 @@ describe('buildCues', () => {
       assignments: { L001: 'p1' },
       recordings: {},
       export: { status: 'idle', progress: 0 },
+      gameExport: { status: 'idle', progress: 0 },
     }
     const cues = buildCues(manifest, dub, true)
     expect(cues.map((cue) => cue.time)).toEqual([1, 5])

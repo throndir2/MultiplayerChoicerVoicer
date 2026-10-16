@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ClientEvents, type DubView } from '@mcv/shared'
 import { PlayerChip, percent } from '../components/ui'
 import { useRoom } from '../lib/room'
+import { DubDownloads } from './DubDownloads'
 import { DubPlayer, type HostControls } from './DubPlayer'
 
 export function dubTitle(dub: DubView, names: Map<string, string>): string {
@@ -92,6 +93,9 @@ export function PlaybackView() {
           hostControls={hostControls}
           onEnded={() => setWatched((current) => new Set(current).add(dub.id))}
         />
+        <div className="button-row">
+          <DubDownloads dub={dub} title={dubTitle(dub, names)} />
+        </div>
         {!isHost && <p className="hint">The host starts and stops the playback for everybody.</p>}
       </div>
       <aside className="playback__side">
