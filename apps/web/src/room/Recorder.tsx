@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   ClientEvents,
-  RECORDING_LEAD_IN,
   RECORDING_OFFSET,
   type DubView,
   type PackLine,
@@ -19,6 +18,7 @@ import {
   decodeUrl,
   drawWaveform,
   pickRecorderMimeType,
+  prepareCapture,
   unlockAudio,
   type WaveLayer,
 } from '../lib/audio'
@@ -26,8 +26,6 @@ import type { Microphone } from '../lib/microphone'
 import { useAssetsVersion } from '../lib/preload'
 import { useRoom } from '../lib/room'
 
-/** Seconds between "Record" and the start of the line. The original line (if it is on) starts after this. */
-const LEAD_IN = RECORDING_LEAD_IN
 /** Recording length for a line without original audio. */
 const FALLBACK_SECONDS = 6
 
@@ -95,20 +93,22 @@ export function Recorder({
   const [playing, setPlaying] = useState<'original' | 'take' | null>(null)
   const [sceneActive, setSceneActive] = useState(false)
   const [elapsed, setElapsed] = useState(0)
+  /** True while "Record" waits for the microphone (only when it was not open yet). */
+  const [micWait, setMicWait] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const prompt = useRef<Wave | null>(null)
+  const promptBuffer = useRef<AudioBuffer | null>(null)
   const take = useRef<Wave | null>(null)
   const localTake = useRef<AudioBuffer | null>(null)
   const live = useRef<SampleTrack | null>(null)
   /** Seconds from the start of the live recording to the moment the player hears the start of the line. */
-  const liveLead = useRef(LEAD_IN)
+  const liveLead = useRef(0)
   const playhead = useRef<number | null>(null)
   const sources = useRef<AudioBufferSourceNode[]>([])
   const frame = useRef<number | null>(null)
   const stopTimer = useRef<number | null>(null)
-  const sceneTimer = useRef<number | null>(null)
   /** Changes on each stop, so a playback that is still loading does not start after a stop. */
   const playToken = useRef(0)
   const starting = useRef(false)
@@ -146,7 +146,7 @@ export function Recorder({
       end = Math.max(end, original.duration)
     }
     if (track) {
-      // The time line is the same as for the saved take: the countdown is before 0 s and is not shown.
+      // The time line is the same as for the saved take: the part before the line starts is before 0 s.
       layers.push({
         label: 'Recording…',
         samples: track.data,
@@ -171,6 +171,14 @@ export function Recorder({
     drawWaveform(canvas, layers, end + 0.2, playhead.current)
   }, [color, lineSeconds])
 
+  const lineStart = line.timestamps[0] ?? 0
+  /** Moves the paused scene to the start of the line, so "Record" can play it at once. */
+  const parkVideo = useCallback(() => {
+    const video = videoRef.current
+    if (!video || video.readyState < HTMLMediaElement.HAVE_METADATA || !video.paused) return
+    if (Math.abs(video.currentTime - lineStart) > 0.02) video.currentTime = lineStart
+  }, [lineStart])
+
   const stopPlayback = useCallback(() => {
     playToken.current += 1
     for (const source of sources.current) {
@@ -185,18 +193,23 @@ export function Recorder({
     frame.current = null
     if (stopTimer.current !== null) window.clearTimeout(stopTimer.current)
     stopTimer.current = null
-    if (sceneTimer.current !== null) window.clearTimeout(sceneTimer.current)
-    sceneTimer.current = null
     videoRef.current?.pause()
+    parkVideo()
     playhead.current = null
     setPlaying(null)
     setSceneActive(false)
     draw()
-  }, [draw])
+  }, [draw, parkVideo])
+
+  // Load the capture worklet now, so "Record" does not wait for it.
+  useEffect(() => {
+    void prepareCapture()
+  }, [])
 
   // Load the original line for this line.
   useEffect(() => {
     prompt.current = null
+    promptBuffer.current = null
     localTake.current = null
     live.current = null
     draw()
@@ -206,6 +219,7 @@ export function Recorder({
         .then((buffer) => {
           if (cancelledLoad) return
           prompt.current = waveOf(buffer, 0)
+          promptBuffer.current = buffer
           draw()
         })
         .catch(() => undefined)
@@ -360,41 +374,23 @@ export function Recorder({
 
   async function beginRecording() {
     stopPlayback()
+    // Resume the audio clock while the click is fresh, so the browser allows it.
+    const unlocking = unlockAudio()
+    const ready = mic.stream?.getAudioTracks().some((track) => track.readyState === 'live')
+    if (!ready) setMicWait(true)
     const stream = await mic.open()
+    setMicWait(false)
     if (!stream) {
       notify(mic.error || 'The microphone could not start')
       return
     }
-    await unlockAudio()
+    await unlocking
     const ctx = audioContext()
 
-    // The original line can play quietly during the recording, so the player can speak with it.
-    let guide: AudioBuffer | null = null
-    if (guideVolume > 0 && line.promptUrl) {
-      try {
-        guide = await decodeUrl(line.promptUrl, 0)
-      } catch {
-        // Record without the original line.
-      }
-    }
-    const video = videoRef.current
-    const timestamp = line.timestamps[0] ?? 0
-    const preroll = Math.min(LEAD_IN, timestamp)
-    const withScene = Boolean(sceneSrc && video)
-    if (withScene && video) {
-      video.muted = true
-      video.currentTime = timestamp - preroll
-      await new Promise<void>((resolve) => {
-        const done = () => resolve()
-        video.addEventListener('seeked', done, { once: true })
-        window.setTimeout(done, 1500)
-      })
-    }
-
+    // The recording starts at once. Everything else follows while the microphone already records.
     const source = ctx.createMediaStreamSource(stream)
     sourceNode.current = source
-    const limit = LEAD_IN + lineSeconds
-    const track = new SampleTrack(ctx.sampleRate, limit + 1)
+    const track = new SampleTrack(ctx.sampleRate, lineSeconds + 2)
     try {
       stopCapture.current = await captureSamples(ctx, source, (chunk) => track.push(chunk))
     } catch {
@@ -412,7 +408,7 @@ export function Recorder({
     const chunks: Blob[] = []
     cancelled.current = false
     // Seconds from the start of the upload to the start of the original line, and the volume of the original line.
-    const timing = { lead: LEAD_IN, guide: guide ? guideVolume : 0 }
+    const timing = { lead: 0, guide: 0 }
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) chunks.push(event.data)
     }
@@ -423,44 +419,76 @@ export function Recorder({
     }
     recorderRef.current = recorder
     live.current = track
+    liveLead.current = 0
     recorder.start(250)
     const startedAt = ctx.currentTime
-    // The player hears the original line after the output latency of the device.
-    timing.lead = LEAD_IN + Math.min(0.5, Math.max(0, (ctx.baseLatency || 0) + (ctx.outputLatency || 0)))
-    liveLead.current = timing.lead
-    // The recording never runs longer than the original line.
-    autoStop.current = window.setTimeout(() => stopRecording(), limit * 1000)
+    modeRef.current = 'recording'
+    setElapsed(0)
+    setMode('recording')
+    const token = playToken.current
+    let shown = -1
+    const tick = () => {
+      if (modeRef.current !== 'recording') return
+      const linePosition = Math.min(lineSeconds, ctx.currentTime - startedAt - liveLead.current)
+      playhead.current = linePosition >= 0 ? linePosition : null
+      const tenths = Math.floor(Math.max(0, linePosition) * 10)
+      if (tenths !== shown) {
+        shown = tenths
+        setElapsed(Math.max(0, linePosition))
+      }
+      draw()
+      frame.current = requestAnimationFrame(tick)
+    }
+    frame.current = requestAnimationFrame(tick)
+
+    // The original line can play quietly during the recording, so the player can speak with it. It is
+    // normally decoded already when the line opens.
+    let guide: AudioBuffer | null = null
+    if (guideVolume > 0 && line.promptUrl) {
+      try {
+        guide = promptBuffer.current ?? (await decodeUrl(line.promptUrl, 0))
+      } catch {
+        // Record without the original line.
+      }
+    }
+    const video = videoRef.current
+    const withScene = Boolean(sceneSrc && video)
+    if (withScene && video) {
+      video.muted = true
+      // The scene normally waits at the start of the line already (see parkVideo).
+      if (video.seeking || Math.abs(video.currentTime - lineStart) > 0.05) {
+        if (!video.seeking) video.currentTime = lineStart
+        await new Promise<void>((resolve) => {
+          const done = () => resolve()
+          video.addEventListener('seeked', done, { once: true })
+          window.setTimeout(done, 1500)
+        })
+      }
+    }
+    // A stop or a line change while the line loads cancels the rest.
+    if (token !== playToken.current || recorderRef.current !== recorder || modeRef.current !== 'recording') return
+    const lineAt = ctx.currentTime
     if (guide) {
       const voice = ctx.createBufferSource()
       voice.buffer = guide
       const gain = ctx.createGain()
       gain.gain.value = guideVolume
       voice.connect(gain).connect(ctx.destination)
-      voice.start(startedAt + LEAD_IN)
+      voice.start(lineAt)
       sources.current.push(voice)
     }
     if (withScene && video) {
       setSceneActive(true)
-      sceneTimer.current = window.setTimeout(() => void video.play().catch(() => undefined), (LEAD_IN - preroll) * 1000)
+      void video.play().catch(() => undefined)
     }
-    modeRef.current = 'recording'
-    setElapsed(0)
-    setMode('recording')
-    let shown = -1
-    const tick = () => {
-      if (modeRef.current !== 'recording') return
-      const position = Math.min(limit, ctx.currentTime - startedAt)
-      const linePosition = position - liveLead.current
-      playhead.current = linePosition >= 0 ? linePosition : null
-      const tenths = Math.floor(position * 10)
-      if (tenths !== shown) {
-        shown = tenths
-        setElapsed(position)
-      }
-      draw()
-      frame.current = requestAnimationFrame(tick)
-    }
-    frame.current = requestAnimationFrame(tick)
+    // The player hears the original line after the output latency of the device.
+    const latency = guide ? Math.min(0.5, Math.max(0, (ctx.baseLatency || 0) + (ctx.outputLatency || 0))) : 0
+    timing.lead = Math.max(0, lineAt - startedAt) + latency
+    timing.guide = guide ? guideVolume : 0
+    liveLead.current = timing.lead
+    // The recording never runs longer than the original line.
+    const remaining = timing.lead + lineSeconds - (ctx.currentTime - startedAt)
+    autoStop.current = window.setTimeout(() => stopRecording(), Math.max(0, remaining) * 1000)
   }
 
   function stopRecording() {
@@ -561,7 +589,6 @@ export function Recorder({
   })
 
   const characters = line.characters.join(' & ')
-  const recordingSeconds = Math.max(0, elapsed - LEAD_IN)
 
   return (
     <section className="card recorder">
@@ -591,6 +618,7 @@ export function Recorder({
                 muted
                 playsInline
                 preload="metadata"
+                onLoadedMetadata={parkVideo}
               />
             )}
           </>
@@ -606,12 +634,10 @@ export function Recorder({
         </div>
         {mode === 'recording' && (
           <div className="stage__rec">
-            ●{' '}
-            {elapsed < LEAD_IN
-              ? `Get ready… ${(LEAD_IN - elapsed).toFixed(1)} s`
-              : `REC ${Math.min(recordingSeconds, lineSeconds).toFixed(1)} s / ${lineSeconds.toFixed(1)} s`}
+            ● REC {Math.min(elapsed, lineSeconds).toFixed(1)} s / {lineSeconds.toFixed(1)} s
           </div>
         )}
+        {micWait && mode === 'idle' && <div className="stage__rec">Starting the microphone…</div>}
       </div>
 
       <canvas ref={canvasRef} className="wave" aria-label="Waveform of your take on top of the original line" />
@@ -675,10 +701,10 @@ export function Recorder({
         )}
       </div>
       <p className="hint">
-        After you press Record, a {LEAD_IN} s countdown runs.{' '}
+        The recording starts at once when you press Record.{' '}
         {guideVolume > 0 && line.promptUrl
-          ? 'Then the original line plays quietly. Speak with it. '
-          : 'Then speak your line. '}
+          ? 'The original line plays quietly at the same time. Speak with it. '
+          : 'Speak your line. '}
         The recording stops automatically at the length of the original line.
         {requireTake ? ' You cannot go back to a line after you press Next.' : ''}
       </p>

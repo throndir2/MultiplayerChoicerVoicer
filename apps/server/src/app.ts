@@ -38,7 +38,7 @@ const catalogQuerySchema = z.object({
 const recordingQuerySchema = z.object({
   dubId: z.string().min(1).max(64),
   lineId: z.string().min(1).max(16),
-  /** Seconds from the start of the upload to the start of the original line (the end of the countdown). */
+  /** Seconds from the start of the upload to the start of the original line. */
   lead: z.coerce.number().min(0).max(10).optional(),
   /** Volume (0 to 1) of the original line during the recording. 0 = it did not play. */
   guide: z.coerce.number().min(0).max(1).optional(),

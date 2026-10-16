@@ -8,8 +8,6 @@ export const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
  * take at the same moment as the first word of the original line, so a take starts with the line.
  */
 export const RECORDING_OFFSET = 0
-/** Seconds of countdown between "Record" and the start of the original line. */
-export const RECORDING_LEAD_IN = 1.5
 /** Delay between the host pressing play and the synchronised start on every client. */
 export const PLAYBACK_LEAD_MS = 1500
 /** Keywords in the shared room list for the random pack pick. */

@@ -59,6 +59,13 @@ export function RecordingView() {
   const mine = me ? counts.get(me.id) : undefined
   const myMissing = mine ? mine.assigned - mine.recorded : 0
   const finished = Boolean(me && round?.finished?.[me.id])
+  const needsMic = tasks.length > 0 && !finished
+  const openMic = mic.open
+  // Open the microphone before the first "Record", so the recording starts at once. A Bluetooth headset can
+  // need some seconds to switch to its microphone.
+  useEffect(() => {
+    if (needsMic) void openMic()
+  }, [needsMic, openMic])
   const names = new Map(room.players.map((player) => [player.id, player.name]))
   const waiting = unfinishedPlayers(room)
   const waitingNames = waiting.map((id) => (id === me?.id ? 'you' : (names.get(id) ?? 'Player')))
