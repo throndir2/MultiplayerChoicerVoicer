@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { ClientEvents, type AssetStatus, type PackManifest, type PlayerView, type RoomView } from '@mcv/shared'
+import { ClientEvents, recordingOrder, type AssetStatus, type PackManifest, type PlayerView, type RoomView } from '@mcv/shared'
 import { assets } from './assets'
 import { loadManifest } from './room'
 
@@ -75,9 +75,10 @@ export function usePreloader(
         queuePrefixes.some((prefix) => url.startsWith(prefix)),
     )
     const mine = new Set(myLineKey ? myLineKey.split(',') : [])
+    const myOrder = new Map(recordingOrder(manifest.lines.filter((line) => mine.has(line.id))).map((line, index) => [line.id, index]))
     manifest.lines.forEach((line, index) => {
       const base = !round ? 20 : mine.has(line.id) ? 10 : 40
-      const priority = base + index / 10_000
+      const priority = base + (myOrder.get(line.id) ?? index) / 10_000
       assets.prefetch(line.imageUrl, priority, line.imageBytes)
       assets.prefetch(line.promptUrl, priority, line.promptBytes)
     })

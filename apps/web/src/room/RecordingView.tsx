@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ClientEvents, taskCounts, unfinishedPlayers } from '@mcv/shared'
+import { ClientEvents, recordingOrder, taskCounts, unfinishedPlayers } from '@mcv/shared'
 import { ProgressBar, ScoreBadge, percent } from '../components/ui'
 import { useMicrophone } from '../lib/microphone'
 import { useRoom } from '../lib/room'
@@ -33,7 +33,7 @@ export function RecordingView() {
   const tasks = useMemo(() => {
     if (!round || !manifest || !me) return []
     return round.dubs.flatMap((dub) =>
-      manifest.lines.filter((line) => dub.assignments[line.id] === me.id).map((line) => ({ dub, line })),
+      recordingOrder(manifest.lines.filter((line) => dub.assignments[line.id] === me.id)).map((line) => ({ dub, line })),
     )
   }, [round, manifest, me])
 

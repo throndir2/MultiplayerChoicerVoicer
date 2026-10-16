@@ -1,5 +1,5 @@
 import { RECORDING_OFFSET } from './types.js'
-import type { DubView, PackManifest, PlaybackState, RoomView, RoundView } from './types.js'
+import type { DubView, PackLine, PackManifest, PlaybackState, RoomView, RoundView } from './types.js'
 
 const QUOTE_PAIRS: Record<string, string> = {
   '"': '"',
@@ -67,6 +67,23 @@ export function buildCues(manifest: PackManifest, dub: DubView, fillMissing: boo
     })
   }
   return cues.sort((a, b) => a.time - b.time || a.lineIndex - b.lineIndex)
+}
+
+/**
+ * The order in which a player records lines: all lines of one character together, so the player
+ * does not switch voices back and forth. Characters come in order of their first line; the lines
+ * of a character keep their pack order. A line with several characters goes with its first character.
+ */
+export function recordingOrder<T extends Pick<PackLine, 'characters'>>(lines: T[]): T[] {
+  const rank = new Map<string, number>()
+  for (const line of lines) {
+    const key = line.characters[0] ?? ''
+    if (!rank.has(key)) rank.set(key, rank.size)
+  }
+  return lines
+    .map((line, index) => ({ line, index, group: rank.get(line.characters[0] ?? '') ?? 0 }))
+    .sort((a, b) => a.group - b.group || a.index - b.index)
+    .map((entry) => entry.line)
 }
 
 /** The cues whose subtitle is visible at `position` seconds. */
