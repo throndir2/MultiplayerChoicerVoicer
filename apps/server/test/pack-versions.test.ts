@@ -66,12 +66,21 @@ describe('pack versions', () => {
     expect(first.stage).toBe('ready')
     const [firstId] = first.packIds
     expect(service.manifest(firstId as string)?.builtAt).toBe(Date.parse('2026-01-01T10:00:00Z'))
+    expect(service.manifest(firstId as string)?.folder).toBe('My Pack')
+    expect(service.manifest(firstId as string)?.lines[0]?.file).toBe('001_A')
+
+    // A pack from before the server kept the line file names gets them when the same files come again.
+    const old = service.manifest(firstId as string)
+    for (const line of old?.lines ?? []) delete line.file
+    delete old?.folder
 
     // The same files again, with other file times: the server uses the pack that it has.
     const again = await upload(service, 'two', makePack('two', 'My Pack', 'Hello', '2026-03-01T10:00:00Z'), false)
     expect(again.packIds).toEqual([firstId])
     expect(service.manifest(firstId as string)?.source.public).toBe(true)
     expect(service.versions(firstId as string)).toEqual([])
+    expect(service.manifest(firstId as string)?.lines[0]?.file).toBe('001_A')
+    expect(service.manifest(firstId as string)?.folder).toBe('My Pack')
 
     // An update with a fix: a new version of the same pack.
     const fixed = await upload(service, 'three', makePack('three', 'My Pack (fixed)', 'Hello!', '2026-02-01T10:00:00Z'), true)

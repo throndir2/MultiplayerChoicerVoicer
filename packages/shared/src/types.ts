@@ -65,6 +65,8 @@ export interface PackLine {
   promptBytes: number
   imageUrl: string | null
   imageBytes: number
+  /** The file name of the line in the pack, without the extension (for example `001_Speaker`). Missing on old packs. */
+  file?: string
 }
 
 export interface PackCharacter {
@@ -99,6 +101,8 @@ export interface PackManifest {
   contentHash?: string
   /** The newest file time in the pack folder: when the pack was made or last changed. Null if unknown. */
   builtAt?: number | null
+  /** The path of the pack folder in the archive or upload (for example `Group/My Pack`). Empty when the files were at the top. */
+  folder?: string
 }
 
 export interface PackSummary {
@@ -284,8 +288,13 @@ export interface DubView {
   assignments: Record<string, string>
   /** lineId -> recording */
   recordings: Record<string, RecordingView>
+  /** The MP4 video of the dub. */
   export: DubExportView
+  /** A ZIP with the takes in the recording format of the Choicer Voicer game (`dub_recordings`). */
+  gameExport: DubExportView
 }
+
+export type DubExportFormat = 'video' | 'game'
 
 export interface RoundView {
   id: string

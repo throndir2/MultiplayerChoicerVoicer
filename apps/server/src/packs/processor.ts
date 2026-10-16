@@ -35,6 +35,8 @@ export async function processPackPhaseA(options: {
   media: Media
   /** From `fingerprintPack`, read before phase A moves the video. */
   fingerprint?: { hash: string; builtAt: number | null }
+  /** The path of the pack folder in the archive or upload, with `/` separators. */
+  folder?: string
   onProgress: (fraction: number) => void
 }): Promise<PackManifest> {
   const { raw, packId, outDir, media } = options
@@ -92,6 +94,7 @@ export async function processPackPhaseA(options: {
       promptBytes: promptUrl ? await fileSize(path.join(outDir, audioFile)) : 0,
       imageUrl,
       imageBytes: imageUrl ? await fileSize(path.join(outDir, imageFile)) : 0,
+      file: line.name,
     }
   })
 
@@ -151,6 +154,7 @@ export async function processPackPhaseA(options: {
       .map((entry) => ({ ...entry, seconds: Math.round(entry.seconds * 10) / 10 }))
       .sort((a, b) => b.seconds - a.seconds),
     createdAt: Date.now(),
+    folder: options.folder ?? '',
   }
   if (options.fingerprint) {
     manifest.contentHash = options.fingerprint.hash

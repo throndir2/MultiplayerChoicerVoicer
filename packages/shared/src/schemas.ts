@@ -72,6 +72,12 @@ export const playbackControlSchema = z.object({
 })
 export const voteSchema = z.object({ dubId: z.string().min(1).max(64) })
 export const dubTargetSchema = z.object({ dubId: z.string().min(1).max(64) })
+export const dubExportSchema = z.object({
+  dubId: z.string().min(1).max(64),
+  format: z.enum(['video', 'game']).default('video'),
+  /** `Date.getTimezoneOffset()` of the player, for the date in the name of the game take folder. */
+  timezoneOffset: z.number().int().min(-900).max(900).optional(),
+})
 
 export const progressUpdateSchema = z.object({
   dubId: z.string().max(64).nullable(),

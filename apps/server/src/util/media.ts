@@ -234,6 +234,35 @@ export class Media {
     )
   }
 
+  /**
+   * A take as the Choicer Voicer game saves it: a 16-bit PCM WAV, stereo, 44.1 kHz. `bitexact` keeps the
+   * plain 44-byte header without a LIST chunk, which simple WAV readers expect.
+   */
+  async audioToGameWav(input: string, output: string): Promise<void> {
+    await runCommand(
+      this.config.ffmpeg,
+      this.ffmpegArgs([
+        '-i',
+        input,
+        '-vn',
+        '-map_metadata',
+        '-1',
+        '-ac',
+        '2',
+        '-ar',
+        '44100',
+        '-c:a',
+        'pcm_s16le',
+        '-fflags',
+        '+bitexact',
+        '-flags:a',
+        '+bitexact',
+        output,
+      ]),
+      { timeoutMs: 120_000 },
+    )
+  }
+
   async transcodeVideo(
     input: string,
     output: string,

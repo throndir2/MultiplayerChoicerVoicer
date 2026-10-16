@@ -18,7 +18,7 @@ This is an unofficial fan project. It is not affiliated with the creators of The
 - **Recording**: the line image, the caption, the original line, a live waveform of the microphone compared with the original, "play in the scene", and keyboard shortcuts. "Record" starts the recording at once. The server cuts the part before the line, keeps the timing of the player, and normalises the loudness.
 - **Progress**: each player sees the progress bar, the current line and the scene of the other players.
 - **Playback**: synchronised start on every device, Web Audio scheduling, the video follows the audio clock, subtitles with the character and the voice actor.
-- **Export**: any dub can be exported to MP4 with soft subtitles.
+- **Download a dub**: download any dub as an MP4 video with soft subtitles, or as a ZIP of WAV takes in the recording format of the Choicer Voicer game (`recordings\dub_recordings`), so you can watch it in the game.
 - **Smart downloads**: each browser downloads the pack files and the recordings of the other players in the background, in priority order, into the private Cache Storage of the site. Broken downloads continue with HTTP Range requests.
 
 The full design is in [docs/plan.md](docs/plan.md). Deployment is in [docs/deployment.md](docs/deployment.md).
