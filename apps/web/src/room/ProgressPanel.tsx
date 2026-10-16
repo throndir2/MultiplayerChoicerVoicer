@@ -8,7 +8,6 @@ export function ProgressPanel() {
   const counts = taskCounts(room)
   const lineById = new Map(roundManifest?.lines.map((line) => [line.id, line]) ?? [])
   const participants = room.players.filter((player) => (counts.get(player.id)?.assigned ?? 0) > 0)
-  const showScene = room.settings.showSceneWhileRecording
 
   return (
     <section className="card progress-panel">
@@ -61,7 +60,7 @@ export function ProgressPanel() {
               />
               {line && !done && (
                 <div className="progress-panel__scene">
-                  {showScene && line.imageUrl && <img src={line.imageUrl} alt="" loading="lazy" />}
+                  {line.imageUrl && <img src={line.imageUrl} alt="" loading="lazy" />}
                   <span>
                     Line {position || '?'} of {myLines.length}: <em>{line.text}</em>
                   </span>
