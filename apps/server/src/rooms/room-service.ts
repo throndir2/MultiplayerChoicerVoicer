@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { FastifyBaseLogger } from 'fastify'
 import {
+  DEFAULT_ROOM_SETTINGS,
   MAX_PLAYERS,
   PLAYBACK_LEAD_MS,
   PLAYER_COLORS,
@@ -11,6 +12,7 @@ import {
   loudnessEnvelope,
   matchEnvelopes,
   playbackPosition,
+  unfinishedPlayers,
   type AssetStatus,
   type DubView,
   type GameMode,
@@ -220,6 +222,8 @@ export class RoomService extends EventEmitter {
     const now = Date.now()
     for (const room of stored?.rooms ?? []) {
       room.emptySince = now
+      room.settings = { ...DEFAULT_ROOM_SETTINGS, ...room.settings }
+      if (room.round) room.round.finished ??= {}
       if (room.playback?.status === 'playing') {
         room.playback = { ...room.playback, status: 'paused', position: playbackPosition(room.playback, now), startedAt: now }
       }
@@ -340,7 +344,7 @@ export class RoomService extends EventEmitter {
       hostId: player.id,
       phase: 'lobby',
       players: [player],
-      settings: { mode: 'versus', fillMissingWithOriginal: true },
+      settings: { ...DEFAULT_ROOM_SETTINGS },
       packId: null,
       packChoices: [],
       jobKey: null,
@@ -482,7 +486,10 @@ export class RoomService extends EventEmitter {
   updateSettings(code: string, actorId: string, patch: Partial<RoomSettings>): void {
     const room = this.get(code)
     this.requireHost(room, actorId)
-    if (patch.mode && patch.mode !== room.settings.mode) this.requirePhase(room, 'lobby', 'results')
+    const roundKeys = ['mode', 'showSceneWhileRecording', 'allowGoingBack'] as const
+    if (roundKeys.some((key) => patch[key] !== undefined && patch[key] !== room.settings[key])) {
+      this.requirePhase(room, 'lobby', 'results')
+    }
     room.settings = { ...room.settings, ...patch }
     this.changed(room)
   }
@@ -641,6 +648,7 @@ export class RoomService extends EventEmitter {
     for (const [character, playerId] of Object.entries(room.cast)) if (playerId === targetId) delete room.cast[character]
     delete room.votes[targetId]
     this.emit('kicked', room.code, targetId)
+    this.startPlaybackWhenFinished(room)
     this.changed(room)
   }
 
@@ -682,6 +690,7 @@ export class RoomService extends EventEmitter {
       mode,
       dubs: buildDubs(manifest, mode, players, room.cast),
       startedAt: Date.now(),
+      finished: {},
     }
     room.phase = 'recording'
     room.votes = {}
@@ -707,6 +716,40 @@ export class RoomService extends EventEmitter {
     this.changed(room)
   }
 
+  /** Marks the player as finished. When every player has finished, the room goes to playback. */
+  finishRecording(code: string, actorId: string): void {
+    const room = this.get(code)
+    this.requirePhase(room, 'recording')
+    const round = room.round
+    if (!round) throw new RoomError('There is no round')
+    const missing = round.dubs.reduce(
+      (sum, dub) =>
+        sum +
+        Object.entries(dub.assignments).filter(
+          ([lineId, playerId]) => playerId === actorId && dub.recordings[lineId]?.playerId !== actorId,
+        ).length,
+      0,
+    )
+    if (missing > 0) throw new RoomError(`Record every line first (${missing} missing)`)
+    round.finished[actorId] = true
+    this.startPlaybackWhenFinished(room)
+    this.changed(room)
+  }
+
+  private startPlaybackWhenFinished(room: RoomRecord): void {
+    if (room.phase !== 'recording' || !room.round) return
+    if (unfinishedPlayers(room).length === 0) this.enterPlayback(room)
+  }
+
+  private enterPlayback(room: RoomRecord): void {
+    const first = room.round?.dubs[0]
+    if (!first) throw new RoomError('There is no round')
+    if (room.phase === 'recording' || !room.playback) {
+      room.playback = { dubId: first.id, status: 'paused', position: 0, startedAt: Date.now(), seq: (room.playback?.seq ?? 0) + 1 }
+    }
+    room.phase = 'playback'
+  }
+
   setPhase(code: string, actorId: string, phase: RoomPhase): void {
     const room = this.get(code)
     this.requireHost(room, actorId)
@@ -721,14 +764,15 @@ export class RoomService extends EventEmitter {
         this.requirePhase(room, 'playback', 'results')
         if (!round) throw new RoomError('There is no round')
         room.playback = null
+        round.finished = {}
         break
       case 'playback': {
         this.requirePhase(room, 'recording', 'voting', 'results')
-        const first = round?.dubs[0]
-        if (!round || !first) throw new RoomError('There is no round')
-        if (room.phase === 'recording' || !room.playback) {
-          room.playback = { dubId: first.id, status: 'paused', position: 0, startedAt: Date.now(), seq: (room.playback?.seq ?? 0) + 1 }
+        if (!round || round.dubs.length === 0) throw new RoomError('There is no round')
+        if (room.phase === 'recording' && unfinishedPlayers(room).length > 0) {
+          throw new RoomError('Playback starts when every player has finished recording')
         }
+        this.enterPlayback(room)
         break
       }
       case 'voting':
@@ -850,7 +894,10 @@ export class RoomService extends EventEmitter {
     const dub = room.round?.dubs.find((entry) => entry.id === dubId)
     if (!dub) throw new RoomError('Unknown dub', 404)
     if (dub.assignments[lineId] !== playerId) throw new RoomError('That line is not yours', 403)
+    if (room.round?.finished[playerId]) throw new RoomError('You have already finished recording', 409)
     if (body.length < 200) throw new RoomError('The recording is empty')
+    const line = this.packs.manifest(room.round?.packId ?? '')?.lines.find((entry) => entry.id === lineId)
+    const maxSeconds = line?.promptDuration ?? 0
     const mime = contentType.split(';')[0]?.trim().toLowerCase() ?? ''
     const extension = AUDIO_EXTENSIONS[mime] ?? 'bin'
     const dir = this.roomDir(room)
@@ -862,7 +909,7 @@ export class RoomService extends EventEmitter {
     await fs.writeFile(temp, body)
     let duration = 0
     try {
-      duration = await this.media.processRecording(temp, output)
+      duration = await this.media.processRecording(temp, output, maxSeconds)
     } catch (error) {
       this.log.warn({ err: error }, 'recording processing failed')
       throw new RoomError('The recording could not be read. Try again.')

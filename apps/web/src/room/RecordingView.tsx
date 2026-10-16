@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ClientEvents, taskCounts } from '@mcv/shared'
+import { ClientEvents, taskCounts, unfinishedPlayers } from '@mcv/shared'
 import { ProgressBar, ScoreBadge, percent } from '../components/ui'
 import { useMicrophone } from '../lib/microphone'
 import { useRoom } from '../lib/room'
@@ -13,11 +13,18 @@ function savedGuideVolume(): number {
   return Number.isFinite(saved) ? Math.min(1, Math.max(0, saved)) : 0.3
 }
 
+function nameList(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
 export function RecordingView() {
-  const { room, me, isHost, roundManifest: manifest, command, notify } = useRoom()
+  const { room, me, roundManifest: manifest, command, notify } = useRoom()
   const mic = useMicrophone()
   const [guideVolume, setGuideVolume] = useState(savedGuideVolume)
   const round = room.round
+  const allowBack = room.settings.allowGoingBack
+  const showScene = room.settings.showSceneWhileRecording
 
   const tasks = useMemo(() => {
     if (!round || !manifest || !me) return []
@@ -30,7 +37,7 @@ export function RecordingView() {
   useEffect(() => {
     if (index === -1 && tasks.length > 0) {
       const firstOpen = tasks.findIndex((task) => !task.dub.recordings[task.line.id])
-      setIndex(firstOpen === -1 ? 0 : firstOpen)
+      setIndex(firstOpen === -1 ? tasks.length - 1 : firstOpen)
     }
   }, [tasks, index])
 
@@ -40,12 +47,20 @@ export function RecordingView() {
     { assigned: 0, recorded: 0 },
   )
   const mine = me ? counts.get(me.id) : undefined
-  const missing = totals.assigned - totals.recorded
+  const myMissing = mine ? mine.assigned - mine.recorded : 0
+  const finished = Boolean(me && round?.finished?.[me.id])
+  const names = new Map(room.players.map((player) => [player.id, player.name]))
+  const waiting = unfinishedPlayers(room)
+  const waitingNames = waiting.map((id) => (id === me?.id ? 'you' : (names.get(id) ?? 'Player')))
 
-  async function toPlayback() {
-    if (missing > 0 && !window.confirm(`${missing} lines are not recorded yet. Go to playback anyway?`)) return
+  async function finishRecording() {
+    if (myMissing > 0) {
+      notify(`Record every line first (${myMissing} missing)`)
+      return
+    }
+    if (!window.confirm('Are you done? You cannot change your lines after this.')) return
     try {
-      await command(ClientEvents.phaseSet, { phase: 'playback' })
+      await command(ClientEvents.roundFinish)
     } catch (error) {
       notify(error instanceof Error ? error.message : 'The request failed')
     }
@@ -87,11 +102,11 @@ export function RecordingView() {
             value={totals.assigned ? totals.recorded / totals.assigned : 0}
             label={`Room: ${totals.recorded} of ${totals.assigned} lines`}
           />
-          {isHost && (
-            <button type="button" className="button button--primary" onClick={() => void toPlayback()}>
-              {missing > 0 ? 'Go to playback' : '🎬 Everybody is done: watch!'}
-            </button>
-          )}
+          <p className="muted">
+            {waiting.length === 0
+              ? 'Everybody is done. The playback starts now.'
+              : `Playback starts automatically when everybody is done. Waiting for ${nameList(waitingNames)}.`}
+          </p>
         </div>
       </div>
 
@@ -125,6 +140,7 @@ export function RecordingView() {
                       type="button"
                       className={`tasks__item${taskIndex === index ? ' is-current' : ''}${done ? ' is-done' : ''}`}
                       onClick={() => setIndex(taskIndex)}
+                      disabled={finished || (!allowBack && taskIndex !== index)}
                     >
                       <span className="tasks__check">{done ? '✓' : taskIndex + 1}</span>
                       <span className="tasks__text">
@@ -138,13 +154,37 @@ export function RecordingView() {
               })}
             </ol>
           )}
-          {mine && mine.assigned > 0 && mine.recorded >= mine.assigned && (
-            <p className="success-text">You recorded every line! 🎉 You can still record any line again.</p>
+          {tasks.length > 0 && !finished && (
+            <div className="tasks__finish">
+              <button
+                type="button"
+                className="button button--primary"
+                disabled={myMissing > 0}
+                onClick={() => void finishRecording()}
+              >
+                ✓ I am done
+              </button>
+              <p className="hint">
+                {myMissing > 0
+                  ? `Record every line, then press “I am done”. ${myMissing} to go.`
+                  : 'You recorded every line! Press “I am done” when you are happy with your takes.'}
+              </p>
+            </div>
           )}
+          {finished && <p className="success-text">You are done! 🎉</p>}
         </aside>
 
         <div className="recording__main">
-          {current ? (
+          {finished ? (
+            <section className="card recording__done">
+              <h3>✓ You are done</h3>
+              <p className="muted">
+                {waitingNames.length > 0
+                  ? `Waiting for ${nameList(waitingNames)}. The playback starts automatically when everybody is done.`
+                  : 'The playback starts now.'}
+              </p>
+            </section>
+          ) : current ? (
             <Recorder
               key={`${current.dub.id}:${current.line.id}`}
               dub={current.dub}
@@ -154,11 +194,15 @@ export function RecordingView() {
               total={tasks.length}
               mic={mic}
               guideVolume={guideVolume}
-              onPrev={index > 0 ? () => setIndex(index - 1) : null}
+              showScene={showScene}
+              requireTake={!allowBack}
+              onPrev={allowBack && index > 0 ? () => setIndex(index - 1) : null}
               onNext={index < tasks.length - 1 ? () => setIndex(index + 1) : null}
+              onFinish={index === tasks.length - 1 ? () => void finishRecording() : null}
+              canFinish={myMissing === 0}
             />
           ) : null}
-          {tasks.length > 0 && (
+          {tasks.length > 0 && !finished && (
             <section className="card mic-settings">
               <h3>Microphone</h3>
               {mic.error && <p className="error-text">{mic.error}</p>}

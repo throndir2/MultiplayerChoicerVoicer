@@ -151,6 +151,7 @@ export function attachRealtime(httpServer: HttpServer, rooms: RoomService, log: 
     command(ClientEvents.castAuto, playerTargetSchema.partial(), () => rooms.castAuto(code, playerId))
     command(ClientEvents.roundStart, playerTargetSchema.partial(), () => rooms.startRound(code, playerId))
     command(ClientEvents.roundJoin, playerTargetSchema.partial(), () => rooms.joinRound(code, playerId))
+    command(ClientEvents.roundFinish, playerTargetSchema.partial(), () => rooms.finishRecording(code, playerId))
     command(ClientEvents.phaseSet, phaseSetSchema, ({ phase }) => rooms.setPhase(code, playerId, phase))
     command(ClientEvents.playerKick, playerTargetSchema, ({ playerId: target }) => rooms.kick(code, playerId, target))
     command(ClientEvents.playerSpectate, spectateSchema, ({ spectator }) =>

@@ -1,13 +1,14 @@
-import { taskCounts } from '@mcv/shared'
+import { ClientEvents, taskCounts } from '@mcv/shared'
 import { PlayerChip, ProgressBar, percent } from '../components/ui'
 import { useRoom } from '../lib/room'
 
 /** Shows how far every player is: a bar, the current line and scene, and a recording mark. */
 export function ProgressPanel() {
-  const { room, roundManifest } = useRoom()
+  const { room, roundManifest, isHost, session, command, notify } = useRoom()
   const counts = taskCounts(room)
   const lineById = new Map(roundManifest?.lines.map((line) => [line.id, line]) ?? [])
   const participants = room.players.filter((player) => (counts.get(player.id)?.assigned ?? 0) > 0)
+  const showScene = room.settings.showSceneWhileRecording
 
   return (
     <section className="card progress-panel">
@@ -15,7 +16,7 @@ export function ProgressPanel() {
       <ul>
         {participants.map((player) => {
           const count = counts.get(player.id) ?? { assigned: 0, recorded: 0 }
-          const done = count.recorded >= count.assigned
+          const done = Boolean(room.round?.finished?.[player.id])
           const progress = player.progress
           const line = progress?.lineId ? lineById.get(progress.lineId) : undefined
           const myLines =
@@ -36,6 +37,22 @@ export function ProgressPanel() {
                 ) : !player.connected ? (
                   <span className="muted">away</span>
                 ) : null}
+                {isHost && !done && !player.connected && player.id !== session.playerId && (
+                  <button
+                    type="button"
+                    className="button button--tiny button--danger"
+                    title="The playback waits for every player. Remove a player who has left."
+                    onClick={() => {
+                      if (window.confirm(`Remove ${player.name} from the room? The playback does not wait for them then.`)) {
+                        void command(ClientEvents.playerKick, { playerId: player.id }).catch((error: Error) =>
+                          notify(error.message),
+                        )
+                      }
+                    }}
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
               <ProgressBar
                 value={count.assigned ? count.recorded / count.assigned : 0}
@@ -44,7 +61,7 @@ export function ProgressPanel() {
               />
               {line && !done && (
                 <div className="progress-panel__scene">
-                  {line.imageUrl && <img src={line.imageUrl} alt="" loading="lazy" />}
+                  {showScene && line.imageUrl && <img src={line.imageUrl} alt="" loading="lazy" />}
                   <span>
                     Line {position || '?'} of {myLines.length}: <em>{line.text}</em>
                   </span>

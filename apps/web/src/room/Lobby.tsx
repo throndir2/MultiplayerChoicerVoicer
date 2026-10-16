@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ClientEvents, formatBytes, formatSeconds, type GameMode, type JobView } from '@mcv/shared'
+import { ClientEvents, formatBytes, formatSeconds, type GameMode, type JobView, type RoomSettings } from '@mcv/shared'
 import { Modal, PlayerChip, ProgressBar, percent } from '../components/ui'
 import { assets } from '../lib/assets'
 import { useAssetsVersion } from '../lib/preload'
@@ -293,6 +293,10 @@ export function Lobby() {
     void command(ClientEvents.settingsUpdate, { mode }).catch((error: Error) => notify(error.message))
   }
 
+  function setSetting(patch: Partial<RoomSettings>) {
+    void command(ClientEvents.settingsUpdate, patch).catch((error: Error) => notify(error.message))
+  }
+
   return (
     <div className="lobby">
       <aside className="lobby__side">
@@ -338,13 +342,27 @@ export function Lobby() {
               type="checkbox"
               checked={room.settings.fillMissingWithOriginal}
               disabled={!isHost}
-              onChange={(event) =>
-                void command(ClientEvents.settingsUpdate, { fillMissingWithOriginal: event.target.checked }).catch(
-                  (error: Error) => notify(error.message),
-                )
-              }
+              onChange={(event) => setSetting({ fillMissingWithOriginal: event.target.checked })}
             />
             <span>If a line is not recorded, play the original line</span>
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={room.settings.showSceneWhileRecording}
+              disabled={!isHost}
+              onChange={(event) => setSetting({ showSceneWhileRecording: event.target.checked })}
+            />
+            <span>Show the scene (pictures and video) while recording. Off keeps it a surprise until you watch.</span>
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={room.settings.allowGoingBack}
+              disabled={!isHost}
+              onChange={(event) => setSetting({ allowGoingBack: event.target.checked })}
+            />
+            <span>Players can go back to earlier lines and record them again</span>
           </label>
         </section>
         <section className="card start">

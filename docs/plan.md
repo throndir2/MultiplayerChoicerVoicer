@@ -79,14 +79,24 @@ All modes use one general model. A round has one or more **dubs**. A dub maps ea
 | **Cast** | One shared dub | The host gives characters to players. "Auto-cast" balances the characters by speaking time | Watch the ensemble dub |
 | **Chaos** | One shared dub | Lines are shuffled and shared equally | Watch the ensemble dub |
 
-A line with more than one character goes to the player of the first assigned character. A setting fills missing lines with the original prompt audio. Thus the host can continue when a player does not finish. A player who joins during a Versus round can join in with a new dub. In the other modes, a late player watches. On the results page, the host can start a new round with the same pack or go back to the lobby, as many times as the group wants. A watcher can clear "I only want to watch" on the results page to take part in the next round.
+A line with more than one character goes to the player of the first assigned character. A setting fills missing lines with the original prompt audio (for example, the lines of a player whom the host removed). A player who joins during a Versus round can join in with a new dub. In the other modes, a late player watches. On the results page, the host can start a new round with the same pack or go back to the lobby, as many times as the group wants. A watcher can clear "I only want to watch" on the results page to take part in the next round.
+
+The host sets two more options in the lobby. They apply to the next round and cannot change during a round.
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| Show the scene while recording | Off | Off: the recorder shows a default picture, not the line picture or the video. The scene stays a surprise until the playback. The progress panel does not show the line pictures either. On: the recorder shows the line picture and plays the muted scene with the original line, the take and the recording. |
+| Players can go back to earlier lines | Off | Off: a player records the lines in order. "Next" is available only after a take of the current line, and "Previous" and the line list are not available. On: the player can move to any line and record it again. |
+
+**End of the recording phase.** When a player has a take of every line, the player presses "I am done" (or "Finish" on the last line). After that, the player cannot change the lines. When every player with lines in the round is done, the server moves the room to playback automatically. Nobody can go to playback before that, not even the host. If a player leaves, the host can remove that player in the progress panel, so the others do not wait. "Back to recording" on the playback page clears the "done" marks.
 
 ## 7. Recording
 
-- The player sees the line image, the character, the caption and the length of the original line.
-- "Play original" plays the prompt. When the video is downloaded, the player sees the real scene too.
-- "Original voice while recording" (in the Microphone card, 0 to 100 %, default 30 %, saved in the browser) sets the volume of the original line during a recording. When it is above 0, "Record" starts a 1.5 s lead-in, then the original line plays at that volume. When "Play in the scene" is on, the muted video plays too. The waveform shows the original line where it plays. The player must use headphones, or the microphone also records the original line. At 0 %, the original line does not play during a recording.
-- The waveform shows the live microphone signal while the player records. After the recording, it shows the take below the original, so the player can compare the timing.
+- The player sees the character, the caption and the length of the original line. The picture is a default picture, or the line image when "Show the scene while recording" is on.
+- "Play original" plays the prompt. When "Show the scene while recording" is on and the video is downloaded, the player sees the real scene too.
+- "Record" always starts a 1.5 s countdown. The recording then runs for exactly the length of the original line and stops automatically. It is never longer than the original line. The server also cuts each take to the length of the original line after it trims the silence.
+- "Original voice while recording" (in the Microphone card, 0 to 100 %, default 30 %, saved in the browser) sets the volume of the original line during a recording. When it is above 0, the original line plays at that volume after the countdown. When the scene option is on, the muted video plays too. The player must use headphones, or the microphone also records the original line. At 0 %, the original line does not play during a recording.
+- The waveform shows the take on top of the original line on one time line, so the player can compare the timing directly. Each device pixel column shows the minimum and maximum of the samples (the peaks) and a brighter loudness (RMS) core. While the player records, the browser captures every microphone sample with an AudioWorklet and draws the live signal on top of the original line, which is shown where it plays (after the countdown).
 - The take uploads immediately after "Stop". The server trims the silence at the start and at the end, normalises the loudness, and stores AAC (`.m4a`), which all browsers can decode. A new take replaces the old take.
 - **Match score (0 to 100).** The original game compares a take with the original line. We do the same with the waveform. The server decodes the take and the original line to 8 kHz mono, and makes a loudness envelope (one value for each 20 ms, relative to the loud part, with the silence at both ends removed). Then it compares the two envelopes:
   - **Shape:** the correlation after the take is stretched to the length of the original.
@@ -94,8 +104,8 @@ A line with more than one character goes to the player of the first assigned cha
   - **Timing:** how close the length of the take is to the length of the original.
   - Score = 100 × (0.55 × shape + 0.45 × rhythm) × (0.5 + 0.5 × timing). The length alone cannot give points, so noise or a different sentence scores low.
   - The recorder shows the score after each take (`90+` Perfect, `75+` Great, `55+` Good, `35+` OK). The line list shows the score of each line.
-- Keyboard: `R` record/stop, `P` play original, `T` play my take, `N` next line, `B` previous line.
-- Every player sees the progress of the other players: a percentage bar, the line number, a small image of the scene and a "recording now" mark.
+- Keyboard: `R` record/stop, `P` play original, `T` play my take, `N` next line (or finish on the last line), `B` previous line (only when going back is allowed).
+- Every player sees the progress of the other players: a percentage bar, the line number, a "recording now" mark and a "finished" mark. A small image of the scene shows only when the scene option is on.
 
 ## 8. Playback
 
