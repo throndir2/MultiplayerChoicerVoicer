@@ -3,8 +3,13 @@ export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 export const MAX_PLAYERS = 12
 export const MAX_NAME_LENGTH = 24
 export const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
-/** Seconds that a trimmed recording starts after the line timestamp (prompts have ~0.15 s lead-in). */
-export const RECORDING_OFFSET = 0.1
+/**
+ * Seconds that a stored take starts after the line timestamp. The server places the first word of each
+ * take at the same moment as the first word of the original line, so a take starts with the line.
+ */
+export const RECORDING_OFFSET = 0
+/** Seconds of countdown between "Record" and the start of the original line. */
+export const RECORDING_LEAD_IN = 1.5
 /** Delay between the host pressing play and the synchronised start on every client. */
 export const PLAYBACK_LEAD_MS = 1500
 /** Keywords in the shared room list for the random pack pick. */

@@ -8,6 +8,7 @@ import {
   MAX_PLAYERS,
   PLAYBACK_LEAD_MS,
   PLAYER_COLORS,
+  RECORDING_LEAD_IN,
   SCORE_SAMPLE_RATE,
   buildCues,
   loudnessEnvelope,
@@ -1005,6 +1006,7 @@ export class RoomService extends EventEmitter {
     lineId: string,
     body: Buffer,
     contentType: string,
+    timing: { lead?: number; guide?: number } = {},
   ): Promise<RecordingView> {
     const room = this.get(code)
     this.requirePhase(room, 'recording')
@@ -1026,7 +1028,14 @@ export class RoomService extends EventEmitter {
     await fs.writeFile(temp, body)
     let duration = 0
     try {
-      duration = await this.media.processRecording(temp, output, maxSeconds)
+      const result = await this.media.processRecording(temp, output, {
+        maxSeconds,
+        lead: timing.lead ?? RECORDING_LEAD_IN,
+        prompt: line?.promptUrl ? this.mediaPath(line.promptUrl) : null,
+        guide: timing.guide === undefined ? undefined : timing.guide > 0,
+      })
+      duration = result.duration
+      this.log.info({ lineId, onset: result.onset, echo: result.echo }, 'recording processed')
     } catch (error) {
       this.log.warn({ err: error }, 'recording processing failed')
       throw new RoomError('The recording could not be read. Try again.')

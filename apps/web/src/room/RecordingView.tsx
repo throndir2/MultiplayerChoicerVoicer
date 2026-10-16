@@ -252,8 +252,8 @@ export function RecordingView() {
                 />
               </label>
               <p className="hint">
-                The original line plays at this volume while you record, so you can hear it and speak with it. Use
-                headphones, or the microphone also records the original line.
+                The original line plays at this volume while you record, so you can hear it and speak with it. Echo
+                cancellation removes it from your take. Headphones still give the cleanest take.
               </p>
               <label className="toggle">
                 <input
