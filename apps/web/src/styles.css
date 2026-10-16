@@ -1303,10 +1303,21 @@ input[type='radio'] {
 
 .wave {
   width: 100%;
-  height: 120px;
+  height: 150px;
   background: #0d0b16;
   border-radius: 10px;
   display: block;
+}
+
+.tasks__finish {
+  margin-top: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.recording__done h3 {
+  margin-top: 0;
 }
 
 .mic-settings select {
@@ -1337,6 +1348,29 @@ input[type='radio'] {
 
 .stage .is-hidden {
   visibility: hidden;
+}
+
+.stage__placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 0 10% 18%;
+  text-align: center;
+  color: var(--muted);
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--player, #7c4dff) 38%, transparent), transparent 55%),
+    linear-gradient(160deg, #1d1630, #0d0b16);
+}
+
+.stage .stage__placeholder img {
+  position: static;
+  width: clamp(64px, 14%, 120px);
+  height: auto;
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.5));
 }
 
 .stage__caption {

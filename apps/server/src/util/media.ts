@@ -268,25 +268,29 @@ export class Media {
 
   /**
    * Trims silence at both ends, normalises the loudness and stores AAC, which every browser
-   * can decode. A take that is all silence is kept without the trim.
+   * can decode. A take that is all silence is kept without the trim. When `maxSeconds` is
+   * above 0, the take is cut to that length (the length of the original line).
    */
-  async processRecording(input: string, output: string): Promise<number> {
+  async processRecording(input: string, output: string, maxSeconds = 0): Promise<number> {
     const trim =
       'silenceremove=start_periods=1:start_threshold=-42dB:start_silence=0.06,' +
       'areverse,silenceremove=start_periods=1:start_threshold=-42dB:start_silence=0.2,areverse,'
+    const cap = maxSeconds > 0 ? `asetpts=N/SR/TB,atrim=end=${maxSeconds.toFixed(3)},` : ''
     const normalise = 'loudnorm=I=-16:TP=-1.5:LRA=11'
     const encode = ['-ar', '48000', '-ac', '1', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart']
-    await runCommand(this.config.ffmpeg, this.ffmpegArgs(['-i', input, '-vn', '-af', trim + normalise, ...encode, output]), {
-      timeoutMs: 120_000,
-    })
+    await runCommand(
+      this.config.ffmpeg,
+      this.ffmpegArgs(['-i', input, '-vn', '-af', trim + cap + normalise, ...encode, output]),
+      { timeoutMs: 120_000 },
+    )
     let duration = await this.duration(output)
     if (duration < 0.15) {
-      await runCommand(this.config.ffmpeg, this.ffmpegArgs(['-i', input, '-vn', '-af', normalise, ...encode, output]), {
+      await runCommand(this.config.ffmpeg, this.ffmpegArgs(['-i', input, '-vn', '-af', cap + normalise, ...encode, output]), {
         timeoutMs: 120_000,
       })
       duration = await this.duration(output)
     }
-    return duration
+    return maxSeconds > 0 ? Math.min(duration, maxSeconds) : duration
   }
 
   /** Decodes the first audio stream to mono 32-bit float samples at `sampleRate`. */

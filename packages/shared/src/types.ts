@@ -170,6 +170,17 @@ export interface ModDetails {
 export interface RoomSettings {
   mode: GameMode
   fillMissingWithOriginal: boolean
+  /** Show the line pictures and the video while the players record. Off keeps the scene a surprise until playback. */
+  showSceneWhileRecording: boolean
+  /** Let the players go back to earlier lines and record them again. */
+  allowGoingBack: boolean
+}
+
+export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
+  mode: 'versus',
+  fillMissingWithOriginal: true,
+  showSceneWhileRecording: false,
+  allowGoingBack: false,
 }
 
 export interface AssetStatus {
@@ -233,6 +244,8 @@ export interface RoundView {
   mode: GameMode
   dubs: DubView[]
   startedAt: number
+  /** playerId -> true when the player has finished recording. Playback starts when every player has finished. */
+  finished: Record<string, boolean>
 }
 
 export interface PlaybackState {
@@ -302,6 +315,7 @@ export const ClientEvents = {
   castAuto: 'cast:auto',
   roundStart: 'round:start',
   roundJoin: 'round:join',
+  roundFinish: 'round:finish',
   phaseSet: 'phase:set',
   playerKick: 'player:kick',
   playerSpectate: 'player:spectate',

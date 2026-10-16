@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   ClientEvents,
   RECORDING_OFFSET,
@@ -11,25 +11,42 @@ import { uploadBinary } from '../lib/api'
 import { ScoreBadge } from '../components/ui'
 import { assets } from '../lib/assets'
 import {
+  SampleTrack,
   audioContext,
+  captureSamples,
   decodeBlob,
   decodeUrl,
-  drawWaveRows,
-  envelope,
+  drawWaveform,
   pickRecorderMimeType,
   unlockAudio,
+  type WaveLayer,
 } from '../lib/audio'
 import type { Microphone } from '../lib/microphone'
 import { useAssetsVersion } from '../lib/preload'
 import { useRoom } from '../lib/room'
 
-const BIN = 0.02
-/** Seconds between "Record" and the start of the original line when it plays during the recording. */
-const GUIDE_LEAD = 1.5
+/** Seconds between "Record" and the start of the line. The original line (if it is on) starts after this. */
+const LEAD_IN = 1.5
+/** Recording length for a line without original audio. */
+const FALLBACK_SECONDS = 6
 
-interface Envelope {
-  values: number[]
-  seconds: number
+interface Wave {
+  samples: Float32Array
+  sampleRate: number
+  duration: number
+  /** Seconds on the time line where the first sample plays. */
+  offset: number
+}
+
+function waveOf(buffer: AudioBuffer, offset: number): Wave {
+  return { samples: buffer.getChannelData(0), sampleRate: buffer.sampleRate, duration: buffer.duration, offset }
+}
+
+function withAlpha(color: string, alpha: number): string {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return color
+  return `${color}${Math.round(alpha * 255)
+    .toString(16)
+    .padStart(2, '0')}`
 }
 
 interface Props {
@@ -41,72 +58,111 @@ interface Props {
   mic: Microphone
   /** Volume (0 to 1) of the original line while the player records. 0 does not play it. */
   guideVolume: number
+  /** Show the line picture and play the scene. Off shows a default picture, so the scene stays a surprise. */
+  showScene: boolean
+  /** "Next" needs a take of this line (when the player cannot come back). */
+  requireTake: boolean
   onPrev: (() => void) | null
   onNext: (() => void) | null
+  /** Shown instead of "Next" on the last line. */
+  onFinish: (() => void) | null
+  canFinish: boolean
 }
 
-export function Recorder({ dub, line, manifest, position, total, mic, guideVolume, onPrev, onNext }: Props) {
+export function Recorder({
+  dub,
+  line,
+  manifest,
+  position,
+  total,
+  mic,
+  guideVolume,
+  showScene,
+  requireTake,
+  onPrev,
+  onNext,
+  onFinish,
+  canFinish,
+}: Props) {
   const { room, session, me, emit, notify } = useRoom()
   useAssetsVersion()
   const recording: RecordingView | undefined = dub.recordings[line.id]
   const [mode, setMode] = useState<'idle' | 'recording' | 'saving'>('idle')
   const [playing, setPlaying] = useState<'original' | 'take' | null>(null)
   const [sceneActive, setSceneActive] = useState(false)
-  const [useScene, setUseScene] = useState(true)
   const [elapsed, setElapsed] = useState(0)
-  const [leadIn, setLeadIn] = useState(0)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const promptEnv = useRef<Envelope | null>(null)
-  const takeEnv = useRef<Envelope | null>(null)
+  const prompt = useRef<Wave | null>(null)
+  const take = useRef<Wave | null>(null)
   const localTake = useRef<AudioBuffer | null>(null)
-  const live = useRef<number[]>([])
+  const live = useRef<SampleTrack | null>(null)
   const playhead = useRef<number | null>(null)
   const sources = useRef<AudioBufferSourceNode[]>([])
   const frame = useRef<number | null>(null)
   const stopTimer = useRef<number | null>(null)
   const sceneTimer = useRef<number | null>(null)
-  const guideLead = useRef(0)
   const starting = useRef(false)
   const modeRef = useRef(mode)
   modeRef.current = mode
 
   const recorderRef = useRef<MediaRecorder | null>(null)
   const sourceNode = useRef<MediaStreamAudioSourceNode | null>(null)
-  const sampleTimer = useRef<number | null>(null)
+  const stopCapture = useRef<(() => void) | null>(null)
   const autoStop = useRef<number | null>(null)
   const cancelled = useRef(false)
 
   const color = me?.color ?? '#9c6bff'
+  const lineSeconds = line.promptDuration > 0 ? line.promptDuration : FALLBACK_SECONDS
   const videoUrl = manifest.videoUrl
-  const sceneSrc = videoUrl ? (assets.objectUrl(videoUrl) ?? videoUrl) : null
-  const imageSrc = assets.objectUrl(line.imageUrl) ?? line.imageUrl
+  const sceneSrc = showScene && videoUrl ? (assets.objectUrl(videoUrl) ?? videoUrl) : null
+  const imageSrc = showScene ? (assets.objectUrl(line.imageUrl) ?? line.imageUrl) : null
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const isRecording = modeRef.current === 'recording'
-    const takeValues = isRecording ? live.current : (takeEnv.current?.values ?? [])
-    const takeSeconds = isRecording ? live.current.length * BIN : (takeEnv.current?.seconds ?? 0)
-    // While the original line plays during a recording, show it where it plays.
-    const lead = isRecording ? guideLead.current : 0
-    const promptValues = promptEnv.current?.values ?? []
-    const originalValues =
-      lead > 0 && promptValues.length > 0
-        ? [...new Array<number>(Math.round(lead / BIN)).fill(0), ...promptValues]
-        : promptValues
-    const scale = Math.max((promptEnv.current?.seconds ?? 0) + lead, takeSeconds, 1.5) + 0.3
-    drawWaveRows(
-      canvas,
-      [
-        { label: 'Original', values: originalValues, binSeconds: BIN, color: 'rgba(255,255,255,0.35)' },
-        { label: isRecording ? 'Recording…' : 'Your take', values: takeValues, binSeconds: BIN, color },
-      ],
-      scale,
-      playhead.current,
-    )
-  }, [color])
+    const track = modeRef.current !== 'idle' ? live.current : null
+    // While the microphone records, the original line is shown where it plays (after the lead-in).
+    const lead = track ? LEAD_IN : 0
+    const layers: WaveLayer[] = []
+    let end = 1
+    const original = prompt.current
+    if (original) {
+      layers.push({
+        label: 'Original',
+        samples: original.samples,
+        sampleRate: original.sampleRate,
+        offset: lead,
+        color: 'rgba(255,255,255,0.22)',
+        coreColor: 'rgba(255,255,255,0.5)',
+      })
+      end = Math.max(end, lead + original.duration)
+    }
+    if (track) {
+      layers.push({
+        label: 'Recording…',
+        samples: track.data,
+        length: track.length,
+        sampleRate: track.sampleRate,
+        offset: 0,
+        color: withAlpha(color, 0.5),
+        coreColor: withAlpha(color, 0.9),
+      })
+      end = Math.max(end, LEAD_IN + lineSeconds)
+    } else if (take.current) {
+      layers.push({
+        label: 'Your take',
+        samples: take.current.samples,
+        sampleRate: take.current.sampleRate,
+        offset: take.current.offset,
+        color: withAlpha(color, 0.5),
+        coreColor: withAlpha(color, 0.9),
+      })
+      end = Math.max(end, take.current.offset + take.current.duration)
+    }
+    drawWaveform(canvas, layers, end + 0.2, playhead.current)
+  }, [color, lineSeconds])
 
   const stopPlayback = useCallback(() => {
     for (const source of sources.current) {
@@ -130,18 +186,18 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
     draw()
   }, [draw])
 
-  // Load the original line and the saved take for this line.
+  // Load the original line for this line.
   useEffect(() => {
-    promptEnv.current = null
+    prompt.current = null
     localTake.current = null
-    live.current = []
+    live.current = null
     draw()
     let cancelledLoad = false
     if (line.promptUrl) {
       decodeUrl(line.promptUrl, 0)
         .then((buffer) => {
           if (cancelledLoad) return
-          promptEnv.current = { values: envelope(buffer, BIN), seconds: buffer.duration }
+          prompt.current = waveOf(buffer, 0)
           draw()
         })
         .catch(() => undefined)
@@ -152,19 +208,20 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
     }
   }, [line.id, line.promptUrl, draw, stopPlayback])
 
+  // Load the saved take. It plays RECORDING_OFFSET after the line timestamp, so it is drawn there.
   useEffect(() => {
     let cancelledLoad = false
     if (recording) {
       decodeUrl(recording.url, 0)
         .then((buffer) => {
           if (cancelledLoad) return
-          takeEnv.current = { values: envelope(buffer, BIN), seconds: buffer.duration }
+          take.current = waveOf(buffer, RECORDING_OFFSET)
           localTake.current = null
           draw()
         })
         .catch(() => undefined)
     } else if (!localTake.current) {
-      takeEnv.current = null
+      take.current = null
       draw()
     }
     return () => {
@@ -184,10 +241,11 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
     emit(ClientEvents.progressUpdate, { dubId: dub.id, lineId: line.id, recording: mode === 'recording' })
   }, [dub.id, line.id, mode, emit])
 
-  function animatePlayhead(startAt: number, until: number) {
+  /** Moves the playhead. `zeroAt` is the audio clock time of 0 s on the waveform. */
+  function animatePlayhead(zeroAt: number, until: number) {
     const ctx = audioContext()
     const tick = () => {
-      const position = ctx.currentTime - startAt
+      const position = ctx.currentTime - zeroAt
       playhead.current = position >= 0 ? position : null
       draw()
       if (position < until) frame.current = requestAnimationFrame(tick)
@@ -214,11 +272,13 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
     if (!buffer) return
     const ctx = audioContext()
     const offset = kind === 'take' ? RECORDING_OFFSET : 0
+    const waveOffset = kind === 'take' ? (take.current?.offset ?? RECORDING_OFFSET) : 0
+    const until = waveOffset + buffer.duration
     const video = videoRef.current
     const timestamp = line.timestamps[0] ?? 0
     setPlaying(kind)
 
-    if (useScene && sceneSrc && video) {
+    if (sceneSrc && video) {
       const preroll = Math.min(1.5, timestamp)
       const from = timestamp - preroll
       setSceneActive(true)
@@ -251,7 +311,7 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
       const voiceAt = startAt + preroll + offset
       voice.start(voiceAt)
       sources.current.push(voice)
-      animatePlayhead(voiceAt, buffer.duration)
+      animatePlayhead(voiceAt - waveOffset, until)
       stopTimer.current = window.setTimeout(stopPlayback, (preroll + offset + buffer.duration + 0.6) * 1000)
       return
     }
@@ -262,15 +322,15 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
     const startAt = ctx.currentTime + 0.02
     source.start(startAt)
     sources.current.push(source)
-    animatePlayhead(startAt, buffer.duration)
+    animatePlayhead(startAt - waveOffset, until)
     stopTimer.current = window.setTimeout(stopPlayback, (buffer.duration + 0.15) * 1000)
   }
 
   function cleanupRecording() {
-    if (sampleTimer.current !== null) window.clearInterval(sampleTimer.current)
     if (autoStop.current !== null) window.clearTimeout(autoStop.current)
-    sampleTimer.current = null
     autoStop.current = null
+    stopCapture.current?.()
+    stopCapture.current = null
     sourceNode.current?.disconnect()
     sourceNode.current = null
   }
@@ -304,11 +364,10 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
         // Record without the original line.
       }
     }
-    const lead = guide ? GUIDE_LEAD : 0
     const video = videoRef.current
     const timestamp = line.timestamps[0] ?? 0
-    const preroll = Math.min(lead, timestamp)
-    const withScene = Boolean(guide && useScene && sceneSrc && video)
+    const preroll = Math.min(LEAD_IN, timestamp)
+    const withScene = Boolean(sceneSrc && video)
     if (withScene && video) {
       video.muted = true
       video.currentTime = timestamp - preroll
@@ -320,10 +379,14 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
     }
 
     const source = ctx.createMediaStreamSource(stream)
-    const analyser = ctx.createAnalyser()
-    analyser.fftSize = 1024
-    source.connect(analyser)
     sourceNode.current = source
+    const limit = LEAD_IN + lineSeconds
+    const track = new SampleTrack(ctx.sampleRate, limit + 1)
+    try {
+      stopCapture.current = await captureSamples(ctx, source, (chunk) => track.push(chunk))
+    } catch {
+      stopCapture.current = null
+    }
     const mimeType = pickRecorderMimeType()
     let recorder: MediaRecorder
     try {
@@ -344,66 +407,72 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
       void finish(new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' }))
     }
     recorderRef.current = recorder
-    live.current = []
-    takeEnv.current = null
-    guideLead.current = lead
-    const samples = new Float32Array(analyser.fftSize)
-    const started = performance.now()
-    sampleTimer.current = window.setInterval(() => {
-      analyser.getFloatTimeDomainData(samples)
-      let peak = 0
-      for (const value of samples) peak = Math.max(peak, Math.abs(value))
-      live.current.push(peak)
-      playhead.current = (performance.now() - started) / 1000
-      if (live.current.length % 5 === 0) setElapsed(playhead.current)
-      draw()
-    }, BIN * 1000)
-    const limit = Math.max(6, line.promptDuration * 2.5 + 3) + lead
-    autoStop.current = window.setTimeout(() => stopRecording(), limit * 1000)
+    live.current = track
     recorder.start(250)
+    const startedAt = ctx.currentTime
+    // The recording never runs longer than the original line.
+    autoStop.current = window.setTimeout(() => stopRecording(), limit * 1000)
     if (guide) {
       const voice = ctx.createBufferSource()
       voice.buffer = guide
       const gain = ctx.createGain()
       gain.gain.value = guideVolume
       voice.connect(gain).connect(ctx.destination)
-      voice.start(ctx.currentTime + lead)
+      voice.start(startedAt + LEAD_IN)
       sources.current.push(voice)
-      if (withScene && video) {
-        setSceneActive(true)
-        sceneTimer.current = window.setTimeout(
-          () => void video.play().catch(() => undefined),
-          (lead - preroll) * 1000,
-        )
-      }
     }
-    setLeadIn(lead)
+    if (withScene && video) {
+      setSceneActive(true)
+      sceneTimer.current = window.setTimeout(() => void video.play().catch(() => undefined), (LEAD_IN - preroll) * 1000)
+    }
+    modeRef.current = 'recording'
     setElapsed(0)
     setMode('recording')
+    let shown = -1
+    const tick = () => {
+      if (modeRef.current !== 'recording') return
+      const position = Math.min(limit, ctx.currentTime - startedAt)
+      playhead.current = position
+      const tenths = Math.floor(position * 10)
+      if (tenths !== shown) {
+        shown = tenths
+        setElapsed(position)
+      }
+      draw()
+      frame.current = requestAnimationFrame(tick)
+    }
+    frame.current = requestAnimationFrame(tick)
   }
 
   function stopRecording() {
+    if (modeRef.current !== 'recording') return
+    if (autoStop.current !== null) window.clearTimeout(autoStop.current)
+    autoStop.current = null
     const recorder = recorderRef.current
     if (recorder && recorder.state !== 'inactive') recorder.stop()
     recorderRef.current = null
-    stopPlayback()
+    modeRef.current = 'saving'
     setMode('saving')
+    stopPlayback()
   }
 
   async function finish(blob: Blob) {
     if (blob.size < 1000) {
       notify('Nothing was recorded. Check your microphone.')
+      live.current = null
       setMode('idle')
+      draw()
       return
     }
     try {
       const buffer = await decodeBlob(blob)
       localTake.current = buffer
-      takeEnv.current = { values: envelope(buffer, BIN), seconds: buffer.duration }
+      // The original line started LEAD_IN after the start of the recording.
+      take.current = waveOf(buffer, -LEAD_IN)
     } catch {
       // The server version is shown when it arrives.
     }
-    live.current = []
+    live.current = null
     draw()
     try {
       const contentType = blob.type || 'audio/webm'
@@ -432,6 +501,9 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
     [line.id],
   )
 
+  const hasTake = Boolean(recording || localTake.current)
+  const nextReady = Boolean(onNext) && (!requireTake || Boolean(recording))
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null
@@ -444,15 +516,17 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
         else if (modeRef.current === 'recording') stopRecording()
       } else if (key === 'p') void play('original')
       else if (key === 't') void play('take')
-      else if (key === 'n' && onNext && modeRef.current === 'idle') onNext()
-      else if (key === 'b' && onPrev && modeRef.current === 'idle') onPrev()
+      else if (key === 'n' && modeRef.current === 'idle') {
+        if (nextReady) onNext?.()
+        else if (onFinish && canFinish) onFinish()
+      } else if (key === 'b' && onPrev && modeRef.current === 'idle') onPrev()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const hasTake = Boolean(recording || localTake.current)
   const characters = line.characters.join(' & ')
+  const recordingSeconds = Math.max(0, elapsed - LEAD_IN)
 
   return (
     <section className="card recorder">
@@ -471,16 +545,25 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
       </div>
 
       <div className="stage stage--recorder">
-        {imageSrc && <img className={sceneActive ? 'is-hidden' : ''} src={imageSrc} alt="" />}
-        {sceneSrc && (
-          <video
-            ref={videoRef}
-            className={sceneActive ? '' : 'is-hidden'}
-            src={sceneSrc}
-            muted
-            playsInline
-            preload="metadata"
-          />
+        {showScene ? (
+          <>
+            {imageSrc && <img className={sceneActive ? 'is-hidden' : ''} src={imageSrc} alt="" />}
+            {sceneSrc && (
+              <video
+                ref={videoRef}
+                className={sceneActive ? '' : 'is-hidden'}
+                src={sceneSrc}
+                muted
+                playsInline
+                preload="metadata"
+              />
+            )}
+          </>
+        ) : (
+          <div className="stage__placeholder" style={{ '--player': color } as CSSProperties}>
+            <img src="/favicon.svg" alt="" />
+            <span>The scene is a surprise. You see it when you watch the dubs.</span>
+          </div>
         )}
         <div className="stage__caption">
           <span className="stage__speaker">{characters}</span>
@@ -489,14 +572,14 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
         {mode === 'recording' && (
           <div className="stage__rec">
             ●{' '}
-            {elapsed < leadIn
-              ? `Get ready… ${(leadIn - elapsed).toFixed(1)} s`
-              : `REC ${(elapsed - leadIn).toFixed(1)} s / ${line.promptDuration.toFixed(1)} s`}
+            {elapsed < LEAD_IN
+              ? `Get ready… ${(LEAD_IN - elapsed).toFixed(1)} s`
+              : `REC ${Math.min(recordingSeconds, lineSeconds).toFixed(1)} s / ${lineSeconds.toFixed(1)} s`}
           </div>
         )}
       </div>
 
-      <canvas ref={canvasRef} className="wave" aria-label="Waveform of the original line and your take" />
+      <canvas ref={canvasRef} className="wave" aria-label="Waveform of your take on top of the original line" />
 
       <div className="recorder__controls">
         <button
@@ -524,32 +607,45 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
         <button type="button" className="button" onClick={() => void play('take')} disabled={!hasTake || mode !== 'idle'}>
           {playing === 'take' ? '■ Stop' : '▶ My take'} <kbd>T</kbd>
         </button>
-        {sceneSrc && (
-          <label className="toggle toggle--inline">
-            <input type="checkbox" checked={useScene} onChange={(event) => setUseScene(event.target.checked)} />
-            <span>Play in the scene</span>
-          </label>
-        )}
       </div>
 
       <div className="recorder__nav">
-        <button type="button" className="button" onClick={() => onPrev?.()} disabled={!onPrev || mode !== 'idle'}>
-          ← Previous <kbd>B</kbd>
-        </button>
-        <button
-          type="button"
-          className={`button${recording ? ' button--primary' : ''}`}
-          onClick={() => onNext?.()}
-          disabled={!onNext || mode !== 'idle'}
-        >
-          Next → <kbd>N</kbd>
-        </button>
+        {onPrev ? (
+          <button type="button" className="button" onClick={() => onPrev()} disabled={mode !== 'idle'}>
+            ← Previous <kbd>B</kbd>
+          </button>
+        ) : (
+          <span />
+        )}
+        {onFinish && !onNext ? (
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={() => onFinish()}
+            disabled={!canFinish || mode !== 'idle'}
+            title={canFinish ? undefined : 'Record every line first'}
+          >
+            ✓ Finish <kbd>N</kbd>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`button${recording ? ' button--primary' : ''}`}
+            onClick={() => onNext?.()}
+            disabled={!nextReady || mode !== 'idle'}
+            title={onNext && !nextReady ? 'Record this line first' : undefined}
+          >
+            Next → <kbd>N</kbd>
+          </button>
+        )}
       </div>
       <p className="hint">
+        After you press Record, a {LEAD_IN} s countdown runs.{' '}
         {guideVolume > 0 && line.promptUrl
-          ? 'After you press Record, the original line plays quietly after a short wait. Speak with it. '
-          : 'Start to speak just after you press Record. '}
-        The server removes the silence at the start and the end, so your line plays at the correct time.
+          ? 'Then the original line plays quietly. Speak with it. '
+          : 'Then speak your line. '}
+        The recording stops automatically at the length of the original line.
+        {requireTake ? ' You cannot go back to a line after you press Next.' : ''}
       </p>
     </section>
   )

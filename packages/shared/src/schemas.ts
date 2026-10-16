@@ -21,6 +21,8 @@ export const settingsUpdateSchema = z
   .object({
     mode: gameModeSchema,
     fillMissingWithOriginal: z.boolean(),
+    showSceneWhileRecording: z.boolean(),
+    allowGoingBack: z.boolean(),
   })
   .partial()
 

@@ -58,6 +58,11 @@ describe.skipIf(!hasFfmpeg)('pack pipeline', () => {
     expect(seconds).toBeGreaterThan(1.6)
     expect(seconds).toBeLessThan(1.95)
 
+    // A take is never longer than the original line.
+    const capped = path.join(work, 'capped.m4a')
+    expect(await media.processRecording(path.join(outDir, 'lines', 'L001.mp3'), capped, 1)).toBeLessThanOrEqual(1)
+    expect(await media.duration(capped)).toBeLessThan(1.05)
+
     const original = await media.decodePcm(path.join(outDir, 'lines', 'L001.mp3'), SCORE_SAMPLE_RATE)
     const take = await media.decodePcm(recording, SCORE_SAMPLE_RATE)
     expect(take.length / SCORE_SAMPLE_RATE).toBeGreaterThan(1.5)

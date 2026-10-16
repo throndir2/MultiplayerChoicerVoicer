@@ -1,5 +1,5 @@
 import { RECORDING_OFFSET } from './types.js'
-import type { DubView, PackManifest, PlaybackState, RoomView } from './types.js'
+import type { DubView, PackManifest, PlaybackState, RoomView, RoundView } from './types.js'
 
 const QUOTE_PAIRS: Record<string, string> = {
   '"': '"',
@@ -100,6 +100,20 @@ export function taskCounts(room: Pick<RoomView, 'round'>): Map<string, PlayerTas
     }
   }
   return counts
+}
+
+/** The players in the room who have lines in the current round and have not finished recording yet. */
+export function unfinishedPlayers(room: { round: RoundView | null; players: { id: string }[] }): string[] {
+  const round = room.round
+  if (!round) return []
+  const present = new Set(room.players.map((player) => player.id))
+  const waiting = new Set<string>()
+  for (const dub of round.dubs) {
+    for (const playerId of Object.values(dub.assignments)) {
+      if (present.has(playerId) && !round.finished?.[playerId]) waiting.add(playerId)
+    }
+  }
+  return [...waiting]
 }
 
 export function formatSeconds(totalSeconds: number): string {
