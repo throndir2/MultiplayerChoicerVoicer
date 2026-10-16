@@ -120,7 +120,7 @@ describe.skipIf(!hasFfmpeg)('pack pipeline', () => {
     }
 
     const cleaned = path.join(dir, 'cleaned.m4a')
-    const result = await media.processRecording(takeFile, cleaned, { prompt: promptFile, lead, maxSeconds: 2.9 })
+    const result = await media.processRecording(takeFile, cleaned, { prompt: promptFile, lead, maxSeconds: 2.9, echo: true })
     expect(result.echo).not.toBeNull()
     expect(Math.abs((result.echo?.delay ?? 0) - (lead + 0.09))).toBeLessThan(0.01)
     expect(result.duration).toBeLessThanOrEqual(2.9)
@@ -129,9 +129,9 @@ describe.skipIf(!hasFfmpeg)('pack pipeline', () => {
     expect(Math.abs(onset + RECORDING_OFFSET - promptOnset)).toBeLessThan(0.04)
     expect(await leftover(cleaned)).toBeLessThan(8)
 
-    // The same take without echo cancellation still holds the original line.
+    // The same take without echo removal (the default) still holds the original line.
     const plain = path.join(dir, 'plain.m4a')
-    await media.processRecording(takeFile, plain, { prompt: promptFile, lead, maxSeconds: 2.9, guide: false })
+    await media.processRecording(takeFile, plain, { prompt: promptFile, lead, maxSeconds: 2.9 })
     expect(await leftover(plain)).toBeGreaterThan(15)
   }, 120_000)
 })

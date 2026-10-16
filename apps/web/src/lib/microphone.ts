@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const DEVICE_KEY = 'mcv:mic'
 const CLEAN_KEY = 'mcv:mic-clean'
+const ECHO_KEY = 'mcv:mic-echo'
 
 export interface Microphone {
   stream: MediaStream | null
@@ -9,9 +10,12 @@ export interface Microphone {
   devices: MediaDeviceInfo[]
   deviceId: string
   clean: boolean
+  /** Echo cancellation in the browser. */
+  echo: boolean
   open: () => Promise<MediaStream | null>
   setDeviceId: (id: string) => void
   setClean: (value: boolean) => void
+  setEcho: (value: boolean) => void
 }
 
 export function useMicrophone(): Microphone {
@@ -20,6 +24,7 @@ export function useMicrophone(): Microphone {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [deviceId, setDeviceIdState] = useState(() => window.localStorage.getItem(DEVICE_KEY) ?? '')
   const [clean, setCleanState] = useState(() => window.localStorage.getItem(CLEAN_KEY) !== 'false')
+  const [echo, setEchoState] = useState(() => window.localStorage.getItem(ECHO_KEY) !== 'false')
   const streamRef = useRef<MediaStream | null>(null)
 
   const close = useCallback(() => {
@@ -48,9 +53,9 @@ export function useMicrophone(): Microphone {
     }
     try {
       const constraints: MediaTrackConstraints = {
-        // Echo cancellation is always on. "all" (Chrome 141+) also removes other sound that the computer plays,
-        // for example a "listen to this microphone" loopback of a voice changer. Older browsers read it as `true`.
-        echoCancellation: 'all' as unknown as boolean,
+        // Plain echo cancellation. The "all" mode (Chrome 141+) also removed all other sound that the computer
+        // plays (for example a voice chat or a voice changer monitor), and that damaged the voice.
+        echoCancellation: echo,
         noiseSuppression: clean,
         autoGainControl: clean,
         channelCount: 1,
@@ -77,7 +82,7 @@ export function useMicrophone(): Microphone {
       }
       return null
     }
-  }, [clean, deviceId, refreshDevices])
+  }, [clean, echo, deviceId, refreshDevices])
 
   useEffect(() => {
     void refreshDevices()
@@ -101,5 +106,14 @@ export function useMicrophone(): Microphone {
     [close],
   )
 
-  return { stream, error, devices, deviceId, clean, open, setDeviceId, setClean }
+  const setEcho = useCallback(
+    (value: boolean) => {
+      window.localStorage.setItem(ECHO_KEY, String(value))
+      setEchoState(value)
+      close()
+    },
+    [close],
+  )
+
+  return { stream, error, devices, deviceId, clean, echo, open, setDeviceId, setClean, setEcho }
 }

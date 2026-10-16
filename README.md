@@ -15,7 +15,7 @@ This is an unofficial fan project. It is not affiliated with the creators of The
   - **Versus**: everybody dubs the whole pack, then you watch every dub and vote.
   - **Cast**: the host gives characters to players (or uses auto-cast), and everybody watches one shared dub.
   - **Chaos**: lines are shuffled and shared at random.
-- **Recording**: the line image, the caption, the original line, a live waveform of the microphone compared with the original, "play in the scene", and keyboard shortcuts. The server removes the echo of the original line, cuts the countdown, puts the first word where the original line has it, and normalises the loudness.
+- **Recording**: the line image, the caption, the original line, a live waveform of the microphone compared with the original, "play in the scene", and keyboard shortcuts. The server cuts the countdown, puts the first word where the original line has it, and normalises the loudness.
 - **Progress**: each player sees the progress bar, the current line and the scene of the other players.
 - **Playback**: synchronised start on every device, Web Audio scheduling, the video follows the audio clock, subtitles with the character and the voice actor.
 - **Export**: any dub can be exported to MP4 with soft subtitles.
