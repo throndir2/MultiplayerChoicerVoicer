@@ -23,8 +23,14 @@ export function useMicrophone(): Microphone {
   // Noise suppression is off by default: the voice-call processing removed frequency bands and parts of the voice.
   const [clean, setCleanState] = useState(() => window.localStorage.getItem(CLEAN_KEY) === 'true')
   const streamRef = useRef<MediaStream | null>(null)
+  /** The open request that is running, so that two calls share one microphone. */
+  const pending = useRef<Promise<MediaStream | null> | null>(null)
+  /** Changes on each close, so a request that finishes after a close does not keep its stream. */
+  const generation = useRef(0)
 
   const close = useCallback(() => {
+    generation.current += 1
+    pending.current = null
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
     setStream(null)
@@ -41,43 +47,59 @@ export function useMicrophone(): Microphone {
     }
   }, [])
 
-  const open = useCallback(async () => {
+  const open = useCallback(() => {
     const current = streamRef.current
-    if (current && current.getAudioTracks().some((track) => track.readyState === 'live')) return current
+    if (current && current.getAudioTracks().some((track) => track.readyState === 'live')) {
+      return Promise.resolve<MediaStream | null>(current)
+    }
+    if (pending.current) return pending.current
     if (!navigator.mediaDevices?.getUserMedia) {
       setError('This browser cannot use a microphone here. Use HTTPS and a modern browser.')
-      return null
+      return Promise.resolve(null)
     }
-    try {
-      const constraints: MediaTrackConstraints = {
-        // Never use echo cancellation: it muffled takes and cut parts of the voice.
-        echoCancellation: false,
-        noiseSuppression: clean,
-        autoGainControl: clean,
-        channelCount: 1,
+    const request = generation.current
+    const promise = (async (): Promise<MediaStream | null> => {
+      try {
+        const constraints: MediaTrackConstraints = {
+          // Never use echo cancellation: it muffled takes and cut parts of the voice.
+          echoCancellation: false,
+          noiseSuppression: clean,
+          autoGainControl: clean,
+          channelCount: 1,
+        }
+        if (deviceId) constraints.deviceId = { exact: deviceId }
+        const next = await navigator.mediaDevices.getUserMedia({ audio: constraints })
+        if (request !== generation.current) {
+          next.getTracks().forEach((track) => track.stop())
+          return null
+        }
+        streamRef.current = next
+        setStream(next)
+        setError('')
+        void refreshDevices()
+        return next
+      } catch (caught) {
+        if (request !== generation.current) return null
+        const name = caught instanceof DOMException ? caught.name : ''
+        setError(
+          name === 'NotAllowedError'
+            ? 'The browser blocked the microphone. Allow it in the address bar, then try again.'
+            : name === 'NotFoundError' || name === 'OverconstrainedError'
+              ? 'No microphone was found.'
+              : 'The microphone could not start.',
+        )
+        if (deviceId) {
+          window.localStorage.removeItem(DEVICE_KEY)
+          setDeviceIdState('')
+        }
+        return null
       }
-      if (deviceId) constraints.deviceId = { exact: deviceId }
-      const next = await navigator.mediaDevices.getUserMedia({ audio: constraints })
-      streamRef.current = next
-      setStream(next)
-      setError('')
-      void refreshDevices()
-      return next
-    } catch (caught) {
-      const name = caught instanceof DOMException ? caught.name : ''
-      setError(
-        name === 'NotAllowedError'
-          ? 'The browser blocked the microphone. Allow it in the address bar, then try again.'
-          : name === 'NotFoundError' || name === 'OverconstrainedError'
-            ? 'No microphone was found.'
-            : 'The microphone could not start.',
-      )
-      if (deviceId) {
-        window.localStorage.removeItem(DEVICE_KEY)
-        setDeviceIdState('')
-      }
-      return null
-    }
+    })()
+    pending.current = promise
+    void promise.finally(() => {
+      if (pending.current === promise) pending.current = null
+    })
+    return promise
   }, [clean, deviceId, refreshDevices])
 
   useEffect(() => {

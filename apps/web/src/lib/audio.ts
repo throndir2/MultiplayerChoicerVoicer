@@ -241,6 +241,11 @@ function loadCaptureModule(ctx: AudioContext): Promise<boolean> {
   return captureModule
 }
 
+/** Loads the capture worklet in advance, so "Record" does not wait for it. */
+export function prepareCapture(): Promise<boolean> {
+  return loadCaptureModule(audioContext())
+}
+
 /** Sends every sample of `source` (mixed to mono) to `onSamples`. Returns a function that stops the capture. */
 export async function captureSamples(
   ctx: AudioContext,

@@ -10,7 +10,6 @@ import {
   MAX_SUGGESTIONS,
   PLAYBACK_LEAD_MS,
   PLAYER_COLORS,
-  RECORDING_LEAD_IN,
   SCORE_SAMPLE_RATE,
   buildCues,
   loudnessEnvelope,
@@ -1335,7 +1334,7 @@ export class RoomService extends EventEmitter {
     try {
       const result = await this.media.processRecording(temp, output, {
         maxSeconds,
-        lead: timing.lead ?? RECORDING_LEAD_IN,
+        lead: timing.lead ?? 0,
         prompt: line?.promptUrl ? this.mediaPath(line.promptUrl) : null,
       })
       duration = result.duration
