@@ -1311,7 +1311,7 @@ export class RoomService extends EventEmitter {
     lineId: string,
     body: Buffer,
     contentType: string,
-    timing: { lead?: number; guide?: number } = {},
+    timing: { lead?: number; mic?: string } = {},
   ): Promise<RecordingView> {
     const room = this.get(code)
     this.requirePhase(room, 'recording')
@@ -1337,15 +1337,16 @@ export class RoomService extends EventEmitter {
         maxSeconds,
         lead: timing.lead ?? RECORDING_LEAD_IN,
         prompt: line?.promptUrl ? this.mediaPath(line.promptUrl) : null,
-        guide: timing.guide === undefined ? undefined : timing.guide > 0,
       })
       duration = result.duration
-      this.log.info({ lineId, onset: result.onset, echo: result.echo }, 'recording processed')
+      this.log.info({ lineId, playerId, take: id, onset: result.onset, mic: timing.mic }, 'recording processed')
     } catch (error) {
-      this.log.warn({ err: error }, 'recording processing failed')
+      this.log.warn({ err: error, take: id, mic: timing.mic }, 'recording processing failed')
       throw new RoomError('The recording could not be read. Try again.')
     } finally {
-      await fs.rm(temp, { force: true })
+      // Keep the upload as the browser sent it, so that a bad take can be examined.
+      await ensureDir(path.join(dir, 'src'))
+      await fs.rename(temp, path.join(dir, 'src', `${id}.${extension}`)).catch(() => fs.rm(temp, { force: true }))
     }
     if (duration < 0.05) {
       await fs.rm(output, { force: true })

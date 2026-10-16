@@ -50,6 +50,29 @@ function withAlpha(color: string, alpha: number): string {
     .padStart(2, '0')}`
 }
 
+/** Microphone facts for the server log, so that a bad take can be explained. */
+function micReport(stream: MediaStream, track: SampleTrack): string {
+  const audio = stream.getAudioTracks()[0]
+  const settings: MediaTrackSettings = audio?.getSettings() ?? {}
+  let peak = 0
+  let sum = 0
+  for (let index = 0; index < track.length; index += 1) {
+    const value = track.data[index] ?? 0
+    peak = Math.max(peak, Math.abs(value))
+    sum += value * value
+  }
+  const db = (value: number) => Math.round(20 * Math.log10(value + 1e-9))
+  return JSON.stringify({
+    label: (audio?.label ?? '').slice(0, 80),
+    ec: settings.echoCancellation,
+    ns: settings.noiseSuppression,
+    agc: settings.autoGainControl,
+    rate: settings.sampleRate,
+    peakDb: db(peak),
+    rmsDb: db(Math.sqrt(sum / Math.max(1, track.length))),
+  })
+}
+
 interface Props {
   dub: DubView
   line: PackLine
@@ -411,12 +434,14 @@ export function Recorder({
     }
     const chunks: Blob[] = []
     cancelled.current = false
-    // Seconds from the start of the upload to the start of the original line, and the volume of the original line.
-    const timing = { lead: LEAD_IN, guide: guide ? guideVolume : 0 }
+    // Seconds from the start of the upload to the start of the original line, and the microphone facts for the
+    // server log.
+    const timing = { lead: LEAD_IN, mic: '' }
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) chunks.push(event.data)
     }
     recorder.onstop = () => {
+      timing.mic = micReport(stream, track)
       cleanupRecording()
       if (cancelled.current) return
       void finish(new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' }), timing)
@@ -475,7 +500,7 @@ export function Recorder({
     stopPlayback()
   }
 
-  async function finish(blob: Blob, timing: { lead: number; guide: number }) {
+  async function finish(blob: Blob, timing: { lead: number; mic: string }) {
     if (blob.size < 1000) {
       notify('Nothing was recorded. Check your microphone.')
       live.current = null
@@ -502,7 +527,7 @@ export function Recorder({
         dubId: dub.id,
         lineId: line.id,
         lead: timing.lead.toFixed(3),
-        guide: timing.guide.toFixed(2),
+        mic: timing.mic,
       })
       const result = await uploadBinary<{ recording: RecordingView }>(
         `/api/rooms/${room.code}/recordings?${query.toString()}`,

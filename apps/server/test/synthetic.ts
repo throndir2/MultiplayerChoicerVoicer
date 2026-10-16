@@ -1,4 +1,4 @@
-/** Synthetic audio for the take tests: a voice-like signal, noise and an echo path. */
+/** Synthetic audio for the take tests: a voice-like signal and noise. */
 
 export const RATE = 48_000
 
@@ -72,23 +72,6 @@ export function rms(samples: Float32Array, from = 0, to = samples.length): numbe
 export function scaleTo(samples: Float32Array, target: number): Float32Array {
   const gain = target / rms(samples)
   return samples.map((value) => value * gain)
-}
-
-/** Adds `source` into `target` at `at` seconds, through a short echo path. */
-export function addEcho(target: Float32Array, source: Float32Array, at: number, gain: number): void {
-  const path: [number, number][] = [
-    [0, 1],
-    [23, 0.45],
-    [70, -0.25],
-    [310, 0.1],
-  ]
-  const start = Math.round(at * RATE)
-  for (const [delay, weight] of path) {
-    for (let index = 0; index < source.length; index += 1) {
-      const position = start + delay + index
-      if (position >= 0 && position < target.length) target[position]! += source[index]! * gain * weight
-    }
-  }
 }
 
 export function addAt(target: Float32Array, source: Float32Array, at: number): void {

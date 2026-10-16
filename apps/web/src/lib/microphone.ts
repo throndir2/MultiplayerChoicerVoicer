@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const DEVICE_KEY = 'mcv:mic'
-const CLEAN_KEY = 'mcv:mic-clean'
-const ECHO_KEY = 'mcv:mic-echo'
+// A new key: noise suppression is off by default, also for players who saved "on" before.
+const CLEAN_KEY = 'mcv:mic-ns'
 
 export interface Microphone {
   stream: MediaStream | null
@@ -10,12 +10,9 @@ export interface Microphone {
   devices: MediaDeviceInfo[]
   deviceId: string
   clean: boolean
-  /** Echo cancellation in the browser. */
-  echo: boolean
   open: () => Promise<MediaStream | null>
   setDeviceId: (id: string) => void
   setClean: (value: boolean) => void
-  setEcho: (value: boolean) => void
 }
 
 export function useMicrophone(): Microphone {
@@ -23,8 +20,8 @@ export function useMicrophone(): Microphone {
   const [error, setError] = useState('')
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [deviceId, setDeviceIdState] = useState(() => window.localStorage.getItem(DEVICE_KEY) ?? '')
-  const [clean, setCleanState] = useState(() => window.localStorage.getItem(CLEAN_KEY) !== 'false')
-  const [echo, setEchoState] = useState(() => window.localStorage.getItem(ECHO_KEY) !== 'false')
+  // Noise suppression is off by default: the voice-call processing removed frequency bands and parts of the voice.
+  const [clean, setCleanState] = useState(() => window.localStorage.getItem(CLEAN_KEY) === 'true')
   const streamRef = useRef<MediaStream | null>(null)
 
   const close = useCallback(() => {
@@ -53,9 +50,8 @@ export function useMicrophone(): Microphone {
     }
     try {
       const constraints: MediaTrackConstraints = {
-        // Plain echo cancellation. The "all" mode (Chrome 141+) also removed all other sound that the computer
-        // plays (for example a voice chat or a voice changer monitor), and that damaged the voice.
-        echoCancellation: echo,
+        // Never use echo cancellation: it muffled takes and cut parts of the voice.
+        echoCancellation: false,
         noiseSuppression: clean,
         autoGainControl: clean,
         channelCount: 1,
@@ -82,7 +78,7 @@ export function useMicrophone(): Microphone {
       }
       return null
     }
-  }, [clean, echo, deviceId, refreshDevices])
+  }, [clean, deviceId, refreshDevices])
 
   useEffect(() => {
     void refreshDevices()
@@ -106,14 +102,5 @@ export function useMicrophone(): Microphone {
     [close],
   )
 
-  const setEcho = useCallback(
-    (value: boolean) => {
-      window.localStorage.setItem(ECHO_KEY, String(value))
-      setEchoState(value)
-      close()
-    },
-    [close],
-  )
-
-  return { stream, error, devices, deviceId, clean, echo, open, setDeviceId, setClean, setEcho }
+  return { stream, error, devices, deviceId, clean, open, setDeviceId, setClean }
 }
