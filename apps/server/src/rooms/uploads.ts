@@ -10,6 +10,7 @@ interface UploadFile {
   path: string
   size: number
   received: number
+  lastModified?: number
 }
 
 interface UploadRecord {
@@ -46,7 +47,7 @@ export class UploadService {
   async create(
     code: string,
     playerId: string,
-    files: { path: string; size: number }[],
+    files: { path: string; size: number; lastModified?: number | undefined }[],
     isPublic: boolean,
   ): Promise<string> {
     const total = files.reduce((sum, file) => sum + file.size, 0)
@@ -59,7 +60,12 @@ export class UploadService {
       const relative = safeRelativePath(file.path)
       if (!relative || seen.has(relative.toLowerCase())) throw new RoomError(`Invalid file name: ${file.path}`)
       seen.add(relative.toLowerCase())
-      cleaned.push({ path: relative, size: file.size, received: 0 })
+      cleaned.push({
+        path: relative,
+        size: file.size,
+        received: 0,
+        ...(file.lastModified ? { lastModified: file.lastModified } : {}),
+      })
     }
     const id = randomId(9)
     const dir = path.join(this.root, id)
@@ -89,7 +95,10 @@ export class UploadService {
   }
 
   status(upload: UploadRecord): UploadStatusResponse {
-    return { uploadId: upload.id, files: upload.files.map((file) => ({ ...file })) }
+    return {
+      uploadId: upload.id,
+      files: upload.files.map((file) => ({ path: file.path, size: file.size, received: file.received })),
+    }
   }
 
   async writeChunk(upload: UploadRecord, filePath: string, offset: number, chunk: Buffer): Promise<number> {
@@ -113,11 +122,17 @@ export class UploadService {
   }
 
   /** Marks the upload complete and hands its folder to the caller. */
-  complete(upload: UploadRecord): { dir: string; label: string; public: boolean } {
+  async complete(upload: UploadRecord): Promise<{ dir: string; label: string; public: boolean }> {
     const missing = upload.files.find((file) => file.received < file.size)
     if (missing) throw new RoomError(`${missing.path} is not completely uploaded`, 409)
     upload.completed = true
     this.uploads.delete(upload.id)
+    // The file times tell when the pack was made, so that the versions of a pack show their dates.
+    for (const file of upload.files) {
+      if (!file.lastModified) continue
+      const time = new Date(file.lastModified)
+      await fs.utimes(path.join(upload.dir, file.path), time, time).catch(() => undefined)
+    }
     const first = upload.files[0]?.path ?? 'Upload'
     const label = first.includes('/') ? (first.split('/')[0] ?? first) : first.replace(/\.(zip|7z|rar)$/i, '')
     return { dir: upload.dir, label, public: upload.public }

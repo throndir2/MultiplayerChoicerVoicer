@@ -30,6 +30,51 @@ export function cleanCaption(caption: string): string {
   return text || caption.trim()
 }
 
+/** Words at the end of a title that only name a version, for example "My Pack (fixed)" or "My Pack - Alt". */
+const VERSION_WORDS = new Set([
+  'fix',
+  'fixed',
+  'fixes',
+  'update',
+  'updated',
+  'final',
+  'alt',
+  'alternate',
+  'alternative',
+  'edit',
+  'edited',
+  'remastered',
+  'new',
+  'old',
+  'version',
+  'ver',
+])
+
+function words(value: string): string[] {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+}
+
+/**
+ * Packs with the same title and the same authors in `_pack_info.ini` are versions of one pack: an update
+ * with fixes, or an alternate. Case, accents, punctuation, "v2" and words such as "fixed" do not count.
+ */
+export function packVersionKey(title: string, authors: string[]): string {
+  const titleWords = words(title.replace(/\bv(?:er(?:sion)?)?\.?\s*\d+(?:\.\d+)*\b/gi, ' '))
+  while (titleWords.length > 1 && VERSION_WORDS.has(titleWords[titleWords.length - 1] as string)) titleWords.pop()
+  const people = [...new Set(authors.map((author) => words(author).join(' ')).filter(Boolean))].sort()
+  return `${titleWords.join(' ')}|${people.join(',')}`
+}
+
+/** The date of a pack version: when it was made, or else when the server got it. */
+export function packVersionDate(pack: { builtAt?: number | null; createdAt: number }): number {
+  return pack.builtAt ?? pack.createdAt
+}
+
 export interface Cue {
   key: string
   lineId: string

@@ -96,6 +96,18 @@ All files have unique names and never change, so the server sends them with `Cac
 
 The server runs one video conversion at a time, because Nahida has a small CPU.
 
+### The same pack more than once
+
+Players can upload a pack again. The new upload can be the same files, an update with fixes, or an alternate. The server handles all three cases.
+
+1. **Fingerprint.** Before phase A, the server calculates a SHA-256 hash of the pack folder (the file names and the contents of all files). It also reads the newest file time. A zip, 7z or rar archive keeps the file times of the Pack Creator export, and a folder upload sends the file times of the browser. So this time is the date when the pack was made or last changed. The manifest keeps the hash (`contentHash`) and this date (`builtAt`).
+2. **Same files.** When a prepared pack has the same hash, the server does not prepare the files again. The job gives the existing pack. If the new source is more open (GameBanana, then a link, then a public upload, then a private upload), the pack takes the new source. A failed video conversion starts again. Packs that the server prepared before this change have no hash, so the server does not compare them.
+3. **Update or alternate.** The Pack Creator writes `_pack_info.ini` with the title and the authors, but with no version, date or pack ID. So the server uses the title and the authors as the version key (`packVersionKey` in `packages/shared/src/logic.ts`). Case, accents, punctuation, `v2`, `version 2` and words at the end such as "fixed", "updated" and "alt" do not count. Packs with the same key are versions of one pack. The server keeps every version.
+4. **What the players see.**
+   - The "On this server" tab shows all versions of a pack together, newest first: "My Pack: 3 versions on this server (updates or alternates)". Each version shows "Version 2 of 3", when it was made, and when and by whom it was uploaded.
+   - When the current pack has more versions, the pack card in the lobby tells which version it is and shows its dates. The host can change to a different version.
+   - A room sees only the versions that every room can see (GameBanana, links and public uploads), and the current pack.
+
 ## 5. Rooms
 
 - A player creates a room and gets a 5-character code (no 0, O, 1, I or L). The invite link is `https://<host>/join/<CODE>`.

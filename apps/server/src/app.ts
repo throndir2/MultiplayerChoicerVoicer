@@ -202,7 +202,7 @@ export async function registerRoutes(app: FastifyInstance, deps: AppDeps): Promi
     const { code, id } = uploadParams.parse(request.params)
     const playerId = authenticate(request, code)
     const upload = uploads.get(id, code, playerId)
-    const done = uploads.complete(upload)
+    const done = await uploads.complete(upload)
     const job = packs.requestUpload({
       uploadId: id,
       dir: done.dir,
