@@ -77,7 +77,7 @@ All modes use one general model. A round has one or more **dubs**. A dub maps ea
 | **Cast** | One shared dub | The host gives characters to players. "Auto-cast" balances the characters by speaking time | Watch the ensemble dub |
 | **Chaos** | One shared dub | Lines are shuffled and shared equally | Watch the ensemble dub |
 
-A line with more than one character goes to the player of the first assigned character. A setting fills missing lines with the original prompt audio. Thus the host can continue when a player does not finish. A player who joins during a Versus round can join in with a new dub. In the other modes, a late player watches.
+A line with more than one character goes to the player of the first assigned character. A setting fills missing lines with the original prompt audio. Thus the host can continue when a player does not finish. A player who joins during a Versus round can join in with a new dub. In the other modes, a late player watches. On the results page, the host can start a new round with the same pack or go back to the lobby, as many times as the group wants. A watcher can clear "I only want to watch" on the results page to take part in the next round.
 
 ## 7. Recording
 
