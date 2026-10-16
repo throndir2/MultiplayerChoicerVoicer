@@ -8,6 +8,7 @@ import {
   type RecordingView,
 } from '@mcv/shared'
 import { uploadBinary } from '../lib/api'
+import { ScoreBadge } from '../components/ui'
 import { assets } from '../lib/assets'
 import {
   audioContext,
@@ -466,6 +467,7 @@ export function Recorder({ dub, line, manifest, position, total, mic, guideVolum
         <span className={`recorder__status${recording ? ' is-saved' : ''}`}>
           {mode === 'saving' ? 'Saving…' : recording ? `✓ Saved (${recording.duration.toFixed(1)} s)` : 'Not recorded yet'}
         </span>
+        {recording && mode !== 'saving' && <ScoreBadge score={recording.score} label />}
       </div>
 
       <div className="stage stage--recorder">

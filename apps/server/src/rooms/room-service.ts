@@ -6,7 +6,10 @@ import {
   MAX_PLAYERS,
   PLAYBACK_LEAD_MS,
   PLAYER_COLORS,
+  SCORE_SAMPLE_RATE,
   buildCues,
+  loudnessEnvelope,
+  matchEnvelopes,
   playbackPosition,
   type AssetStatus,
   type DubView,
@@ -180,6 +183,7 @@ export class RoomService extends EventEmitter {
   private readonly assets = new Map<string, AssetStatus>()
   private readonly progress = new Map<string, ProgressView>()
   private readonly hostTimers = new Map<string, NodeJS.Timeout>()
+  private readonly promptEnvelopes = new Map<string, number[]>()
   private saveTimer: NodeJS.Timeout | null = null
   private sweepTimer: NodeJS.Timeout | null = null
   private exportChain: Promise<void> = Promise.resolve()
@@ -869,6 +873,7 @@ export class RoomService extends EventEmitter {
       await fs.rm(output, { force: true })
       throw new RoomError('The recording is empty')
     }
+    const score = await this.scoreTake(room.round?.packId, lineId, output)
     // The round can change while ffmpeg runs.
     const current = room.round?.dubs.find((entry) => entry.id === dubId)
     if (!current || current.assignments[lineId] !== playerId) {
@@ -886,11 +891,33 @@ export class RoomService extends EventEmitter {
       url: `/media/rooms/${room.id}/rec/${id}.m4a`,
       duration: Math.round(duration * 1000) / 1000,
       createdAt: Date.now(),
+      score,
     }
     current.recordings[lineId] = recording
     current.export = { status: 'idle', progress: 0 }
     this.changed(room)
     return recording
+  }
+
+  /** Compares the loudness envelope of a processed take with the original line. Null if it cannot be measured. */
+  private async scoreTake(packId: string | undefined, lineId: string, takeFile: string): Promise<number | null> {
+    try {
+      const line = packId ? this.packs.manifest(packId)?.lines.find((entry) => entry.id === lineId) : undefined
+      const promptFile = line?.promptUrl ? this.mediaPath(line.promptUrl) : null
+      if (!promptFile) return null
+      let original = this.promptEnvelopes.get(promptFile)
+      if (!original) {
+        original = loudnessEnvelope(await this.media.decodePcm(promptFile, SCORE_SAMPLE_RATE))
+        if (this.promptEnvelopes.size >= 2000) this.promptEnvelopes.clear()
+        this.promptEnvelopes.set(promptFile, original)
+      }
+      if (original.length === 0) return null
+      const take = loudnessEnvelope(await this.media.decodePcm(takeFile, SCORE_SAMPLE_RATE))
+      return matchEnvelopes(original, take).score
+    } catch (error) {
+      this.log.warn({ err: error }, 'recording score failed')
+      return null
+    }
   }
 
   exportDub(code: string, actorId: string, dubId: string): void {

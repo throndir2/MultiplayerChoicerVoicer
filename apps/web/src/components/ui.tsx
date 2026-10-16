@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { scoreLabel } from '@mcv/shared'
 
 export function ProgressBar({
   value,
@@ -78,4 +79,16 @@ export function PackCreatorLink({ className = 'button' }: { className?: string }
 
 export function percent(value: number): string {
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`
+}
+
+/** Match score of a take or a dub (0..100). Shows nothing when the score is unknown. */
+export function ScoreBadge({ score, label }: { score: number | null | undefined; label?: boolean }) {
+  if (typeof score !== 'number') return null
+  const tone = score >= 75 ? 'good' : score >= 35 ? 'mid' : 'low'
+  return (
+    <span className={`score score--${tone}`} title="How well the waveform and the timing match the original line (0 to 100)">
+      🎯 {score}
+      {label ? ` · ${scoreLabel(score)}` : ''}
+    </span>
+  )
 }

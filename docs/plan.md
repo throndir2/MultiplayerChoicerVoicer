@@ -88,6 +88,12 @@ A line with more than one character goes to the player of the first assigned cha
 - "Original voice while recording" (in the Microphone card, 0 to 100 %, default 30 %, saved in the browser) sets the volume of the original line during a recording. When it is above 0, "Record" starts a 1.5 s lead-in, then the original line plays at that volume. When "Play in the scene" is on, the muted video plays too. The waveform shows the original line where it plays. The player must use headphones, or the microphone also records the original line. At 0 %, the original line does not play during a recording.
 - The waveform shows the live microphone signal while the player records. After the recording, it shows the take below the original, so the player can compare the timing.
 - The take uploads immediately after "Stop". The server trims the silence at the start and at the end, normalises the loudness, and stores AAC (`.m4a`), which all browsers can decode. A new take replaces the old take.
+- **Match score (0 to 100).** The original game compares a take with the original line. We do the same with the waveform. The server decodes the take and the original line to 8 kHz mono, and makes a loudness envelope (one value for each 20 ms, relative to the loud part, with the silence at both ends removed). Then it compares the two envelopes:
+  - **Shape:** the correlation after the take is stretched to the length of the original.
+  - **Rhythm:** the correlation on the real time line, with up to 100 ms of shift.
+  - **Timing:** how close the length of the take is to the length of the original.
+  - Score = 100 × (0.55 × shape + 0.45 × rhythm) × (0.5 + 0.5 × timing). The length alone cannot give points, so noise or a different sentence scores low.
+  - The recorder shows the score after each take (`90+` Perfect, `75+` Great, `55+` Good, `35+` OK). The line list shows the score of each line.
 - Keyboard: `R` record/stop, `P` play original, `T` play my take, `N` next line, `B` previous line.
 - Every player sees the progress of the other players: a percentage bar, the line number, a small image of the scene and a "recording now" mark.
 
@@ -99,6 +105,7 @@ A line with more than one character goes to the player of the first assigned cha
 - The subtitles show the character, the cleaned caption and the name of the player. Each player can hide the subtitles.
 - The host can pause, continue, restart and select the next dub. The host sees which players are ready.
 - On the results page, each player can watch any dub again locally. A player can also export a dub to MP4. The server mixes the audio with ffmpeg and adds the subtitles as a soft subtitle track.
+- The results page also shows the match score. In Versus, each dub shows its average score, and the page names the best match. A tie in votes is ordered by the match score. In Cast and Chaos, the page shows the average score of each player. A line without a take counts as 0.
 
 ## 9. Downloads to the browser ("Is this possible on a website?")
 

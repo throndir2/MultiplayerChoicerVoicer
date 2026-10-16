@@ -289,6 +289,46 @@ export class Media {
     return duration
   }
 
+  /** Decodes the first audio stream to mono 32-bit float samples at `sampleRate`. */
+  decodePcm(file: string, sampleRate: number): Promise<Float32Array> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(
+        this.config.ffmpeg,
+        this.ffmpegArgs(['-i', file, '-vn', '-ac', '1', '-ar', String(sampleRate), '-f', 'f32le', 'pipe:1']),
+        { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+      const chunks: Buffer[] = []
+      let size = 0
+      let stderr = ''
+      const limit = sampleRate * 4 * 120
+      const timer = setTimeout(() => child.kill('SIGKILL'), 60_000)
+      child.stdout.on('data', (chunk: Buffer) => {
+        if (size < limit) {
+          chunks.push(chunk)
+          size += chunk.length
+        }
+      })
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr = (stderr + chunk.toString('utf8')).slice(-2000)
+      })
+      child.on('error', (error) => {
+        clearTimeout(timer)
+        reject(new CommandError(`ffmpeg could not start: ${error.message}`, ''))
+      })
+      child.on('close', (code) => {
+        clearTimeout(timer)
+        if (code !== 0) {
+          reject(new CommandError(`ffmpeg exited with code ${code}: ${stderr.slice(-600)}`, stderr))
+          return
+        }
+        const buffer = Buffer.concat(chunks)
+        const samples = new Float32Array(Math.floor(buffer.length / 4))
+        for (let index = 0; index < samples.length; index += 1) samples[index] = buffer.readFloatLE(index * 4)
+        resolve(samples)
+      })
+    })
+  }
+
   async extractArchive(archive: string, destination: string): Promise<void> {
     await runCommand(this.config.archiveTool, ['-x', '-f', archive, '-C', destination], {
       timeoutMs: 30 * 60_000,
