@@ -7,7 +7,7 @@ import {
   type ModDetails,
   type PackSummary,
 } from '@mcv/shared'
-import { Modal, ProgressBar, percent } from '../components/ui'
+import { Modal, PackCreatorLink, ProgressBar, percent } from '../components/ui'
 import { api } from '../lib/api'
 import { useRoom } from '../lib/room'
 import { uploadPack, type UploadItem } from '../lib/upload'
@@ -334,6 +334,10 @@ function UploadTab({ onDone }: { onDone: () => void }) {
         </button>
       )}
       <p className="hint">Large files upload in small parts. If your connection breaks, the upload continues from the last part.</p>
+      <div className="upload__creator">
+        <p className="muted">No pack yet? Make one from any video or YouTube link with the free Windows app.</p>
+        <PackCreatorLink className="button button--small" />
+      </div>
     </div>
   )
 }

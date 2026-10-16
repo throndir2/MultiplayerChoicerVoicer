@@ -38,6 +38,8 @@ During the final playback, the game mutes the clip. It plays the backing track a
 | Upload | A player can upload an archive (`.zip`, `.7z`, `.rar`) or a pack folder. The upload uses resumable 8 MB chunks, so slow connections can continue after an error. |
 | Recently used | Packs that the server already processed show in a separate tab. They start immediately. |
 
+The home screen and the "Upload" tab have a "Create your own Choicer Voicer pack" button. It opens [ChoicerVoicerPackCreator](https://github.com/throndir2/ChoicerVoicerPackCreator), a free Windows app that makes a pack from a video or a YouTube link.
+
 The API endpoints that we use:
 
 - `GET /apiv11/Mod/Index?_nPerpage=50&_aFilters[Generic_Category]=44064&_nPage=N` for the list.
