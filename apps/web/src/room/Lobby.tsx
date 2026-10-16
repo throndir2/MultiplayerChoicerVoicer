@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { ClientEvents, formatBytes, formatSeconds, type GameMode, type JobView, type RoomSettings } from '@mcv/shared'
 import { Modal, PlayerChip, ProgressBar, percent } from '../components/ui'
+import { StorageButton } from '../components/StoragePanel'
 import { assets } from '../lib/assets'
 import { useAssetsVersion } from '../lib/preload'
 import { useRoom } from '../lib/room'
+import { roomInUse } from '../lib/storage'
 import { Library } from './Library'
 import { PlayersPanel } from './PlayersPanel'
 import { KeywordsCard, RandomPickNote } from './RandomPack'
@@ -161,17 +163,11 @@ function PackCard({ onChoose }: { onChoose: () => void }) {
                 : `Downloaded to this device: ${formatBytes(downloaded)} of ${formatBytes(totalBytes)}${manifest.videoUrl ? '' : ' (video comes later)'}`
             }
           />
-          <button
-            type="button"
+          <StorageButton
             className="button button--tiny button--ghost"
-            onClick={() => {
-              if (window.confirm('Delete all pack files and recordings that this browser has downloaded?')) {
-                void assets.clearAll().then(() => window.location.reload())
-              }
-            }}
-          >
-            Clear downloaded files
-          </button>
+            label="Manage downloaded files"
+            inUse={roomInUse(room)}
+          />
         </div>
       )}
       {manifest?.readme && (

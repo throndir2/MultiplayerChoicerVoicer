@@ -4,6 +4,8 @@ import type { RoomPhase, SessionResponse } from '@mcv/shared'
 import { clearSession, loadSession } from '../lib/api'
 import { usePreloader } from '../lib/preload'
 import { RoomContext, useManifest, useRoomConnection, type RoomConnection, type RoomContextValue } from '../lib/room'
+import { roomInUse, useLeaveCleanup } from '../lib/storage'
+import { StorageButton } from '../components/StoragePanel'
 import { Lobby } from '../room/Lobby'
 import { PlaybackView } from '../room/PlaybackView'
 import { RecordingView } from '../room/RecordingView'
@@ -28,6 +30,7 @@ export function RoomScreen({ code }: { code: string }) {
   const [, navigate] = useLocation()
   const session = useMemo(() => loadSession(code), [code])
   const connection = useRoomConnection(session)
+  useLeaveCleanup(code)
 
   useEffect(() => {
     if (!session) navigate(`/join/${code}`, { replace: true })
@@ -123,6 +126,7 @@ function RoomShell({ connection, session }: { connection: RoomConnection; sessio
           <span className="topbar__code" title="Room code">
             {room.code}
           </span>
+          <StorageButton className="icon-button" label="💾" inUse={roomInUse(room)} />
         </header>
         {connection.connection !== 'connected' && (
           <div className="banner" role="status">

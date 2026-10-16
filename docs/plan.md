@@ -112,6 +112,7 @@ The host sets two more options in the lobby. They apply to the next round and ca
 
 - The player sees the character, the caption and the length of the original line. The picture is a default picture, or the line image when "Show the scene while recording" is on.
 - "Play original" plays the prompt. When "Show the scene while recording" is on and the video is downloaded, the player sees the real scene too.
+- When the player goes to another line (Next, Previous, the line list, or the `N` and `B` keys), the original line plays one time automatically, the same as "Play original". The first line of the round does not play by itself. "Record" stops the playback, and a playback that still loads does not start after a stop, a recording or a line change. "Play the original line when I go to a line" (in the Microphone card, default on, saved in the browser) turns this off.
 - "Record" always starts a 1.5 s countdown. The recording then runs for exactly the length of the original line and stops automatically. It is never longer than the original line. The server also cuts each take to the length of the original line after it trims the silence.
 - "Original voice while recording" (in the Microphone card, 0 to 100 %, default 30 %, saved in the browser) sets the volume of the original line during a recording. When it is above 0, the original line plays at that volume after the countdown. When the scene option is on, the muted video plays too. The player must use headphones, or the microphone also records the original line. At 0 %, the original line does not play during a recording.
 - The waveform shows the take on top of the original line on one time line, so the player can compare the timing directly. Each device pixel column shows the minimum and maximum of the samples (the peaks) and a brighter loudness (RMS) core. While the player records, the browser captures every microphone sample with an AudioWorklet and draws the live signal on top of the original line, which is shown where it plays (after the countdown).
@@ -149,6 +150,14 @@ Yes. A website can store large files without a download prompt. The files do not
   5. reports its progress to the server, so the room shows how ready each player is;
   6. removes files that were not used for 7 days.
 - If the video is not completely downloaded when playback starts, the video streams from the server, and the audio still plays from the local copy.
+- **Downloaded files panel.** A player can see and delete the stored files without the developer tools of the browser. The panel opens from the "💾 Downloaded files" button on the home page, from the 💾 button in the top bar of a room, and from "Manage downloaded files" in the lobby. The panel:
+  1. tells the player that the files are in the private storage of the site in the browser, not in the Downloads folder, and that unused files go after 7 days;
+  2. shows the total size, and one row for each pack (with its name, size, number of files and last use) and one row for the recordings of players;
+  3. has a "Delete" button for each row and a "Delete all" button;
+  4. marks the packs and recordings that the open room uses. If the player deletes them, the files download again at once, because the room needs them;
+  5. has the option "Delete all downloaded files when I leave a room". The files go when the player leaves the room in the site. If the player closes the tab in a room, the files go at the next visit, unless that visit goes back into the same room (a reload).
+- A delete removes the files from the Cache Storage, from the index of last use and from the memory of the asset manager. Running downloads of the deleted files stop and do not write to the cache. The preloader of an open room then requests the files of the room again. The page does not reload.
+- The client remembers the name of each pack in `localStorage`, so the panel can show names. For older files, the panel asks the server for the name.
 
 ## 10. Architecture
 

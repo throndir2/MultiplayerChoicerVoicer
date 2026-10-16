@@ -7,6 +7,7 @@ import { ProgressPanel } from './ProgressPanel'
 import { Recorder } from './Recorder'
 
 const GUIDE_KEY = 'mcv:guide-volume'
+const AUTO_PLAY_KEY = 'mcv:auto-play-original'
 
 function savedGuideVolume(): number {
   const saved = Number(window.localStorage.getItem(GUIDE_KEY) ?? '0.3')
@@ -22,6 +23,9 @@ export function RecordingView() {
   const { room, me, roundManifest: manifest, command, notify } = useRoom()
   const mic = useMicrophone()
   const [guideVolume, setGuideVolume] = useState(savedGuideVolume)
+  const [autoPlay, setAutoPlay] = useState(() => window.localStorage.getItem(AUTO_PLAY_KEY) !== '0')
+  /** True after the player moved to another line. The first line does not play by itself. */
+  const [navigated, setNavigated] = useState(false)
   const round = room.round
   const allowBack = room.settings.allowGoingBack
   const showScene = room.settings.showSceneWhileRecording
@@ -40,6 +44,12 @@ export function RecordingView() {
       setIndex(firstOpen === -1 ? tasks.length - 1 : firstOpen)
     }
   }, [tasks, index])
+
+  function goTo(taskIndex: number) {
+    if (taskIndex === index) return
+    setNavigated(true)
+    setIndex(taskIndex)
+  }
 
   const counts = taskCounts(room)
   const totals = [...counts.values()].reduce(
@@ -139,7 +149,7 @@ export function RecordingView() {
                     <button
                       type="button"
                       className={`tasks__item${taskIndex === index ? ' is-current' : ''}${done ? ' is-done' : ''}`}
-                      onClick={() => setIndex(taskIndex)}
+                      onClick={() => goTo(taskIndex)}
                       disabled={finished || (!allowBack && taskIndex !== index)}
                     >
                       <span className="tasks__check">{done ? '✓' : taskIndex + 1}</span>
@@ -196,8 +206,9 @@ export function RecordingView() {
               guideVolume={guideVolume}
               showScene={showScene}
               requireTake={!allowBack}
-              onPrev={allowBack && index > 0 ? () => setIndex(index - 1) : null}
-              onNext={index < tasks.length - 1 ? () => setIndex(index + 1) : null}
+              autoPlay={autoPlay && navigated}
+              onPrev={allowBack && index > 0 ? () => goTo(index - 1) : null}
+              onNext={index < tasks.length - 1 ? () => goTo(index + 1) : null}
               onFinish={index === tasks.length - 1 ? () => void finishRecording() : null}
               canFinish={myMissing === 0}
             />
@@ -244,6 +255,17 @@ export function RecordingView() {
                 The original line plays at this volume while you record, so you can hear it and speak with it. Use
                 headphones, or the microphone also records the original line.
               </p>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={autoPlay}
+                  onChange={(event) => {
+                    setAutoPlay(event.target.checked)
+                    window.localStorage.setItem(AUTO_PLAY_KEY, event.target.checked ? '1' : '0')
+                  }}
+                />
+                <span>Play the original line when I go to a line</span>
+              </label>
             </section>
           )}
         </div>
