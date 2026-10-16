@@ -46,8 +46,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1536m
-          cpus: '2.0'
+          memory: 3g
+          cpus: '4.0'
     logging: *default-logging
 
 volumes:
