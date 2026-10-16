@@ -102,6 +102,8 @@ export function Recorder({
   const take = useRef<Wave | null>(null)
   const localTake = useRef<AudioBuffer | null>(null)
   const live = useRef<SampleTrack | null>(null)
+  /** Seconds from the start of the live recording to the moment the player hears the start of the line. */
+  const liveLead = useRef(LEAD_IN)
   const playhead = useRef<number | null>(null)
   const sources = useRef<AudioBufferSourceNode[]>([])
   const frame = useRef<number | null>(null)
@@ -129,8 +131,6 @@ export function Recorder({
     const canvas = canvasRef.current
     if (!canvas) return
     const track = modeRef.current !== 'idle' ? live.current : null
-    // While the microphone records, the original line is shown where it plays (after the lead-in).
-    const lead = track ? LEAD_IN : 0
     const layers: WaveLayer[] = []
     let end = 1
     const original = prompt.current
@@ -139,23 +139,24 @@ export function Recorder({
         label: 'Original',
         samples: original.samples,
         sampleRate: original.sampleRate,
-        offset: lead,
+        offset: 0,
         color: 'rgba(255,255,255,0.22)',
         coreColor: 'rgba(255,255,255,0.5)',
       })
-      end = Math.max(end, lead + original.duration)
+      end = Math.max(end, original.duration)
     }
     if (track) {
+      // The time line is the same as for the saved take: the countdown is before 0 s and is not shown.
       layers.push({
         label: 'Recording…',
         samples: track.data,
         length: track.length,
         sampleRate: track.sampleRate,
-        offset: 0,
+        offset: -liveLead.current,
         color: withAlpha(color, 0.5),
         coreColor: withAlpha(color, 0.9),
       })
-      end = Math.max(end, LEAD_IN + lineSeconds)
+      if (!original) end = Math.max(end, lineSeconds)
     } else if (take.current) {
       layers.push({
         label: 'Your take',
@@ -426,6 +427,7 @@ export function Recorder({
     const startedAt = ctx.currentTime
     // The player hears the original line after the output latency of the device.
     timing.lead = LEAD_IN + Math.min(0.5, Math.max(0, (ctx.baseLatency || 0) + (ctx.outputLatency || 0)))
+    liveLead.current = timing.lead
     // The recording never runs longer than the original line.
     autoStop.current = window.setTimeout(() => stopRecording(), limit * 1000)
     if (guide) {
@@ -448,7 +450,8 @@ export function Recorder({
     const tick = () => {
       if (modeRef.current !== 'recording') return
       const position = Math.min(limit, ctx.currentTime - startedAt)
-      playhead.current = position
+      const linePosition = position - liveLead.current
+      playhead.current = linePosition >= 0 ? linePosition : null
       const tenths = Math.floor(position * 10)
       if (tenths !== shown) {
         shown = tenths
