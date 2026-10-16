@@ -33,7 +33,7 @@ function ExportButton({ dub }: { dub: DubView }) {
 }
 
 export function ResultsView() {
-  const { room, isHost, roundManifest, command, notify } = useRoom()
+  const { room, isHost, roundManifest, command, notify, me } = useRoom()
   const [watching, setWatching] = useState<DubView | null>(null)
   const round = room.round
   if (!round) return null
@@ -123,6 +123,16 @@ export function ResultsView() {
           </ol>
         )}
       </section>
+      {me && (
+        <label className="toggle card">
+          <input
+            type="checkbox"
+            checked={me.spectator}
+            onChange={(event) => run(ClientEvents.playerSpectate, { spectator: event.target.checked })}
+          />
+          <span>I only want to watch the next round (no recording)</span>
+        </label>
+      )}
       {!isHost && <p className="hint">The host can start a new round or go back to the lobby.</p>}
       {watching && <WatchModal dub={watching} onClose={() => setWatching(null)} />}
     </div>
