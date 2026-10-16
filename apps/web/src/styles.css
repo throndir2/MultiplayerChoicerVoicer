@@ -575,6 +575,20 @@ input[type='radio'] {
   font-weight: 700;
 }
 
+.home__creator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+.home__creator p {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .home__footer {
   margin-top: 2rem;
   text-align: center;
@@ -1120,6 +1134,16 @@ input[type='radio'] {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
+}
+
+.upload__creator {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
 }
 
 /* Recording */

@@ -38,6 +38,8 @@ During the final playback, the game mutes the clip. It plays the backing track a
 | Upload | A player can upload an archive (`.zip`, `.7z`, `.rar`) or a pack folder. The upload uses resumable 8 MB chunks, so slow connections can continue after an error. |
 | Recently used | Packs that the server already processed show in a separate tab. They start immediately. |
 
+The home screen and the "Upload" tab have a "Create your own Choicer Voicer pack" button. It opens [ChoicerVoicerPackCreator](https://github.com/throndir2/ChoicerVoicerPackCreator), a free Windows app that makes a pack from a video or a YouTube link.
+
 The API endpoints that we use:
 
 - `GET /apiv11/Mod/Index?_nPerpage=50&_aFilters[Generic_Category]=44064&_nPage=N` for the list.
@@ -83,6 +85,7 @@ A line with more than one character goes to the player of the first assigned cha
 
 - The player sees the line image, the character, the caption and the length of the original line.
 - "Play original" plays the prompt. When the video is downloaded, the player sees the real scene too.
+- "Original voice while recording" (in the Microphone card, 0 to 100 %, default 30 %, saved in the browser) sets the volume of the original line during a recording. When it is above 0, "Record" starts a 1.5 s lead-in, then the original line plays at that volume. When "Play in the scene" is on, the muted video plays too. The waveform shows the original line where it plays. The player must use headphones, or the microphone also records the original line. At 0 %, the original line does not play during a recording.
 - The waveform shows the live microphone signal while the player records. After the recording, it shows the take below the original, so the player can compare the timing.
 - The take uploads immediately after "Stop". The server trims the silence at the start and at the end, normalises the loudness, and stores AAC (`.m4a`), which all browsers can decode. A new take replaces the old take.
 - **Match score (0 to 100).** The original game compares a take with the original line. We do the same with the waveform. The server decodes the take and the original line to 8 kHz mono, and makes a loudness envelope (one value for each 20 ms, relative to the loud part, with the silence at both ends removed). Then it compares the two envelopes:
@@ -91,7 +94,7 @@ A line with more than one character goes to the player of the first assigned cha
   - **Timing:** how close the length of the take is to the length of the original.
   - Score = 100 × (0.55 × shape + 0.45 × rhythm) × (0.5 + 0.5 × timing). The length alone cannot give points, so noise or a different sentence scores low.
   - The recorder shows the score after each take (`90+` Perfect, `75+` Great, `55+` Good, `35+` OK). The line list shows the score of each line.
-- Keyboard: `R` record/stop, `P` play original, `N` next line, `B` previous line.
+- Keyboard: `R` record/stop, `P` play original, `T` play my take, `N` next line, `B` previous line.
 - Every player sees the progress of the other players: a percentage bar, the line number, a small image of the scene and a "recording now" mark.
 
 ## 8. Playback

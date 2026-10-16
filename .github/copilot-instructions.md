@@ -25,8 +25,10 @@ Do not leave finished work on a branch or in an open pull request. When a task i
 
    Do not add `--delete-branch` when you work in a Git worktree. The command then tries to check out `main`, which the main checkout already uses.
 
-6. Make sure that the merge is complete: `gh pr view <number> --json state,mergedAt` must show `MERGED`.
+6. Make sure that the merge is complete: `gh pr view <number> --json state,mergedAt` must show `MERGED`. Directly after a push, GitHub can report "Pull Request is not mergeable" while it calculates the merge state. Wait until `gh pr view <number> --json mergeable,mergeStateStatus` shows `MERGEABLE` and `CLEAN`, then merge again.
 7. If the pull request has a merge conflict, merge `origin/main` into the branch, resolve the conflict, run the checks again, push, and merge.
+8. After a merge, a session branch can continue. Before new work, run `git fetch origin` and `git merge origin/main` on the branch.
+9. If a new pull request cannot be opened for the branch (for example, the session's pull request is already merged), fast-forward `main` directly. First merge `origin/main` into the branch and run the checks. Then run `git push origin HEAD:main`. Never force-push `main`.
 
 Stop before the merge only when the user asks for a draft, a review, or a hold.
 
