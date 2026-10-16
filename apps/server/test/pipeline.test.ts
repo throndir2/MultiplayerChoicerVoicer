@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
-import { RECORDING_OFFSET, SCORE_SAMPLE_RATE, matchScore } from '@mcv/shared'
+import { SCORE_SAMPLE_RATE, matchScore } from '@mcv/shared'
 import { loadConfig } from '../src/config.js'
 import { findPackDirs, readPack } from '../src/packs/discover.js'
 import { processPackPhaseA, processPackPhaseB } from '../src/packs/processor.js'
@@ -55,10 +55,8 @@ describe.skipIf(!hasFfmpeg)('pack pipeline', () => {
     expect(probe.videoCodec).toBe('h264')
 
     const recording = path.join(work, 'take.m4a')
-    const { duration: seconds } = await media.processRecording(path.join(outDir, 'lines', 'L001.mp3'), recording, {
-      prompt: path.join(outDir, 'lines', 'L001.mp3'),
-    })
-    // 0.15 s lead-in + 1.6 s tone + 0.25 s tail. The tone starts where it starts in the original line.
+    const { duration: seconds } = await media.processRecording(path.join(outDir, 'lines', 'L001.mp3'), recording)
+    // 0.15 s lead-in + 1.6 s tone + 0.25 s tail. The tone stays where it is in the upload.
     expect(seconds).toBeGreaterThan(1.6)
     expect(seconds).toBeLessThan(1.95)
 
@@ -87,16 +85,13 @@ describe.skipIf(!hasFfmpeg)('pack pipeline', () => {
     expect(new Set(Object.values(chaos?.assignments ?? {})).size).toBe(2)
   }, 120_000)
 
-  it('puts the first word of a browser take where the original has it', async () => {
+  it('keeps the timing of a browser take', async () => {
     const media = new Media(loadConfig())
     const config = loadConfig()
     const dir = path.join(work, 'timing')
     mkdirSync(dir, { recursive: true })
     const lead = 1.5
-    // The original line: its first word comes 0.3 s after the start.
-    const original = new Float32Array(Math.round(2.9 * RATE))
-    addAt(original, scaleTo(voice(2.5, 11), 0.1), 0.3)
-    // The upload: the countdown in loud noise, then the player (late by 0.45 s, with a pause).
+    // The upload: the lead in loud noise, then the player (0.45 s after the start of the line, with a pause).
     const upload = noise(Math.round((lead + 2.9) * RATE), 0.006, 12)
     addAt(upload, scaleTo(voice(2.3, 12, [[0.9, 1.4]]), 0.1), lead + 0.45)
     const encode = async (samples: Float32Array, name: string, codec: string[]) => {
@@ -106,17 +101,13 @@ describe.skipIf(!hasFfmpeg)('pack pipeline', () => {
       await runCommand(config.ffmpeg, ['-v', 'error', '-y', '-f', 'f32le', '-ar', String(RATE), '-ac', '1', '-i', raw, ...codec, output])
       return output
     }
-    const promptFile = await encode(original, 'prompt.mp3', ['-c:a', 'libmp3lame', '-b:a', '96k'])
     const takeFile = await encode(upload, 'take.webm', ['-c:a', 'libopus', '-b:a', '128k'])
-    const prompt = await media.decodePcm(promptFile, RATE)
-    const promptOnset = speechBounds(prompt, RATE)?.onset ?? 0
-    expect(Math.abs(promptOnset - 0.3)).toBeLessThan(0.03)
 
     const cleaned = path.join(dir, 'cleaned.m4a')
-    const result = await media.processRecording(takeFile, cleaned, { prompt: promptFile, lead, maxSeconds: 2.9 })
+    const result = await media.processRecording(takeFile, cleaned, { lead, maxSeconds: 2.9 })
     expect(result.duration).toBeLessThanOrEqual(2.9)
     const samples = await media.decodePcm(cleaned, RATE)
     const onset = speechBounds(samples, RATE)?.onset ?? 0
-    expect(Math.abs(onset + RECORDING_OFFSET - promptOnset)).toBeLessThan(0.04)
+    expect(Math.abs(onset - 0.45)).toBeLessThan(0.05)
   }, 120_000)
 })

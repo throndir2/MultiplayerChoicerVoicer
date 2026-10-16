@@ -4,8 +4,8 @@ export const MAX_PLAYERS = 12
 export const MAX_NAME_LENGTH = 24
 export const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 /**
- * Seconds that a stored take starts after the line timestamp. The server places the first word of each
- * take at the same moment as the first word of the original line, so a take starts with the line.
+ * Seconds that a stored take starts after the line timestamp. The server cuts the take at the moment the
+ * player heard the start of the line and keeps the timing of the player, so a take starts with the line.
  */
 export const RECORDING_OFFSET = 0
 /** Delay between the host pressing play and the synchronised start on every client. */

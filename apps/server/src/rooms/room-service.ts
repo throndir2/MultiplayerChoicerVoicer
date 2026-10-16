@@ -1335,7 +1335,6 @@ export class RoomService extends EventEmitter {
       const result = await this.media.processRecording(temp, output, {
         maxSeconds,
         lead: timing.lead ?? 0,
-        prompt: line?.promptUrl ? this.mediaPath(line.promptUrl) : null,
       })
       duration = result.duration
       this.log.info({ lineId, playerId, take: id, onset: result.onset, mic: timing.mic }, 'recording processed')

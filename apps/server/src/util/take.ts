@@ -1,16 +1,11 @@
-import { RECORDING_OFFSET } from '@mcv/shared'
-
 /**
- * Cleans a recorded take before it is stored: the countdown is cut, the first word is found relative to the
- * measured noise floor, and the take is placed so that its first word plays at the same moment as the first
- * word of the original line.
+ * Cleans a recorded take before it is stored: the part before the lead is cut, and the speech is found relative
+ * to the measured noise floor. The take keeps the timing of the player: it is not moved in time.
  */
 
 /** Sample rate of the take processing. */
 export const TAKE_RATE = 48_000
 const FRAME_SECONDS = 0.01
-/** Seconds before the end of the countdown where the search for the first word starts. */
-const EARLY_START = 0.6
 /** Seconds kept before the first sound of the take and after the last sound. */
 const KEEP_BEFORE = 0.05
 const KEEP_AFTER = 0.08
@@ -87,10 +82,8 @@ export function speechBounds(samples: Float32Array, sampleRate: number, from = 0
 // -------------------------------------------------------------------------------------- take
 
 export interface TakeOptions {
-  /** Seconds from the start of the take to the start of the original line (the end of the countdown). */
+  /** Seconds from the start of the take to the moment the player hears the start of the original line. */
   lead: number
-  /** Seconds from the start of the original line to its first word. */
-  promptOnset: number
   /** Longest result in seconds (the length of the original line). 0 = no limit. */
   maxSeconds: number
 }
@@ -102,36 +95,29 @@ export interface TakeResult {
   onset: number | null
 }
 
-/** Cuts the countdown and aligns the first word with the original line. */
+/**
+ * Cuts the part before the lead and silences the noise before the first sound and after the last sound. The
+ * player times the take against the original line, so the take is not moved in time.
+ */
 export function cleanTake(raw: Float32Array, options: TakeOptions): TakeResult {
   const rate = TAKE_RATE
   const take = highPass(raw, rate)
-  const lead = Math.max(0, options.lead)
+  const start = Math.min(take.length, Math.round(Math.max(0, options.lead) * rate))
   const limit = options.maxSeconds > 0 ? Math.round(options.maxSeconds * rate) : Number.POSITIVE_INFINITY
-  const from = Math.max(0, lead - EARLY_START)
-  const bounds = speechBounds(take, rate, from)
-  if (!bounds) {
-    // Nothing stands out from the noise: keep the part after the countdown.
-    const start = Math.min(take.length, Math.round(lead * rate))
-    return { samples: take.slice(start, Math.min(take.length, start + limit)), onset: null }
-  }
-  const keepStart = Math.max(from, bounds.start - KEEP_BEFORE)
-  const keepEnd = Math.min(take.length / rate, bounds.end + KEEP_AFTER)
-  // The first word plays where the first word of the original line plays.
-  const target = Math.max(options.promptOnset - RECORDING_OFFSET, bounds.onset - keepStart)
-  const shift = Math.round((bounds.onset - target) * rate)
-  const first = Math.round(keepStart * rate)
-  const last = Math.round(keepEnd * rate)
-  const length = Math.max(0, Math.min(last - shift, limit))
-  const samples = new Float32Array(length)
+  const stop = Math.min(take.length, start + limit)
+  const bounds = speechBounds(take, rate, start / rate)
+  // Nothing stands out from the noise: keep the part after the lead.
+  if (!bounds) return { samples: take.slice(start, stop), onset: null }
+  const first = Math.max(start, Math.round((bounds.start - KEEP_BEFORE) * rate))
+  const last = Math.min(stop, Math.round((bounds.end + KEEP_AFTER) * rate))
+  const samples = new Float32Array(Math.max(0, last - start))
   const fadeIn = Math.round(0.02 * rate)
   const fadeOut = Math.round(0.05 * rate)
-  const end = Math.min(last, length + shift)
-  for (let index = Math.max(0, first, shift); index < end; index += 1) {
+  for (let index = first; index < last; index += 1) {
     let gain = 1
     if (index - first < fadeIn) gain *= (index - first) / fadeIn
-    if (end - index < fadeOut) gain *= (end - index) / fadeOut
-    samples[index - shift] = take[index]! * gain
+    if (last - index < fadeOut) gain *= (last - index) / fadeOut
+    samples[index - start] = take[index]! * gain
   }
   return { samples, onset: bounds.onset }
 }
