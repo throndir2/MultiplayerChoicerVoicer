@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   ClientEvents,
+  RECORDING_LEAD_IN,
   RECORDING_OFFSET,
   type DubView,
   type PackLine,
@@ -26,7 +27,7 @@ import { useAssetsVersion } from '../lib/preload'
 import { useRoom } from '../lib/room'
 
 /** Seconds between "Record" and the start of the line. The original line (if it is on) starts after this. */
-const LEAD_IN = 1.5
+const LEAD_IN = RECORDING_LEAD_IN
 /** Recording length for a line without original audio. */
 const FALLBACK_SECONDS = 6
 
@@ -409,18 +410,22 @@ export function Recorder({
     }
     const chunks: Blob[] = []
     cancelled.current = false
+    // Seconds from the start of the upload to the start of the original line, and the volume of the original line.
+    const timing = { lead: LEAD_IN, guide: guide ? guideVolume : 0 }
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) chunks.push(event.data)
     }
     recorder.onstop = () => {
       cleanupRecording()
       if (cancelled.current) return
-      void finish(new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' }))
+      void finish(new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' }), timing)
     }
     recorderRef.current = recorder
     live.current = track
     recorder.start(250)
     const startedAt = ctx.currentTime
+    // The player hears the original line after the output latency of the device.
+    timing.lead = LEAD_IN + Math.min(0.5, Math.max(0, (ctx.baseLatency || 0) + (ctx.outputLatency || 0)))
     // The recording never runs longer than the original line.
     autoStop.current = window.setTimeout(() => stopRecording(), limit * 1000)
     if (guide) {
@@ -467,7 +472,7 @@ export function Recorder({
     stopPlayback()
   }
 
-  async function finish(blob: Blob) {
+  async function finish(blob: Blob, timing: { lead: number; guide: number }) {
     if (blob.size < 1000) {
       notify('Nothing was recorded. Check your microphone.')
       live.current = null
@@ -476,10 +481,13 @@ export function Recorder({
       return
     }
     try {
+      // Until the server version arrives, show and play the local take without the countdown.
       const buffer = await decodeBlob(blob)
-      localTake.current = buffer
-      // The original line started LEAD_IN after the start of the recording.
-      take.current = waveOf(buffer, -LEAD_IN)
+      const skip = Math.min(buffer.length - 1, Math.round(timing.lead * buffer.sampleRate))
+      const trimmed = audioContext().createBuffer(1, buffer.length - skip, buffer.sampleRate)
+      trimmed.copyToChannel(buffer.getChannelData(0).subarray(skip), 0)
+      localTake.current = trimmed
+      take.current = waveOf(trimmed, RECORDING_OFFSET)
     } catch {
       // The server version is shown when it arrives.
     }
@@ -487,8 +495,14 @@ export function Recorder({
     draw()
     try {
       const contentType = blob.type || 'audio/webm'
+      const query = new URLSearchParams({
+        dubId: dub.id,
+        lineId: line.id,
+        lead: timing.lead.toFixed(3),
+        guide: timing.guide.toFixed(2),
+      })
       const result = await uploadBinary<{ recording: RecordingView }>(
-        `/api/rooms/${room.code}/recordings?dubId=${encodeURIComponent(dub.id)}&lineId=${encodeURIComponent(line.id)}`,
+        `/api/rooms/${room.code}/recordings?${query.toString()}`,
         blob,
         session.token,
         contentType,
