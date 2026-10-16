@@ -38,6 +38,7 @@ export const sourceRequestSchema = z.discriminatedUnion('kind', [
 export type SourceRequest = z.infer<typeof sourceRequestSchema>
 
 export const packSelectSchema = z.object({ packId: z.string().min(1).max(80) })
+export const entryTargetSchema = z.object({ id: z.string().min(1).max(32) })
 export const castAssignSchema = z.object({
   character: z.string().min(1).max(200),
   playerId: z.string().max(64).nullable(),

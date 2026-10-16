@@ -3,7 +3,6 @@ import {
   formatBytes,
   formatSeconds,
   type CatalogResponse,
-  type JobView,
   type ModDetails,
   type PackSummary,
 } from '@mcv/shared'
@@ -14,11 +13,21 @@ import { uploadPack, type UploadItem } from '../lib/upload'
 
 type Tab = 'gamebanana' | 'server' | 'upload' | 'link'
 
-function useSource() {
+/** What the Library does with the chosen pack: use it now (host), add it to the queue (host), or suggest it (anyone). */
+export type LibraryTarget = 'select' | 'queue' | 'suggest'
+
+const TARGETS: Record<LibraryTarget, { path: string; title: string; action: string; done: string }> = {
+  select: { path: 'source', title: 'Choose a pack', action: 'Use this pack', done: '' },
+  queue: { path: 'queue', title: 'Add a pack to the queue', action: 'Add to the queue', done: 'Added to the queue' },
+  suggest: { path: 'suggestions', title: 'Suggest a pack', action: 'Suggest this pack', done: 'Your suggestion is in the list' },
+}
+
+function useSource(target: LibraryTarget) {
   const { room, session, notify } = useRoom()
   return async (body: unknown): Promise<boolean> => {
     try {
-      await api<{ job: JobView | null }>(`/api/rooms/${room.code}/source`, { body, token: session.token })
+      await api<unknown>(`/api/rooms/${room.code}/${TARGETS[target].path}`, { body, token: session.token })
+      if (TARGETS[target].done) notify(TARGETS[target].done, 'info')
       return true
     } catch (error) {
       notify(error instanceof Error ? error.message : 'The request failed')
@@ -27,8 +36,8 @@ function useSource() {
   }
 }
 
-function GameBananaTab({ onDone }: { onDone: () => void }) {
-  const select = useSource()
+function GameBananaTab({ onDone, target }: { onDone: () => void; target: LibraryTarget }) {
+  const select = useSource(target)
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [category, setCategory] = useState('')
@@ -138,9 +147,15 @@ function GameBananaTab({ onDone }: { onDone: () => void }) {
           disabled={!file || busy}
           onClick={() => void choosePack()}
         >
-          {busy ? 'Starting…' : `Use this pack${file ? ` (${formatBytes(file.size)})` : ''}`}
+          {busy ? 'Starting…' : `${TARGETS[target].action}${file ? ` (${formatBytes(file.size)})` : ''}`}
         </button>
-        <p className="hint">The server downloads and prepares the pack. Everybody in the room then gets the files.</p>
+        <p className="hint">
+          {target === 'suggest'
+            ? 'Everybody sees your suggestion. The host decides which pack to play.'
+            : target === 'queue'
+              ? 'The server downloads and prepares the pack in the background. The browsers download it after the current pack.'
+              : 'The server downloads and prepares the pack. Everybody in the room then gets the files.'}
+        </p>
       </div>
     )
   }
@@ -231,8 +246,8 @@ function GameBananaTab({ onDone }: { onDone: () => void }) {
   )
 }
 
-function ServerTab({ onDone }: { onDone: () => void }) {
-  const select = useSource()
+function ServerTab({ onDone, target }: { onDone: () => void; target: LibraryTarget }) {
+  const select = useSource(target)
   const [packs, setPacks] = useState<PackSummary[] | null>(null)
   useEffect(() => {
     api<{ packs: PackSummary[] }>('/api/packs')
@@ -342,8 +357,8 @@ function UploadTab({ onDone }: { onDone: () => void }) {
   )
 }
 
-function LinkTab({ onDone }: { onDone: () => void }) {
-  const select = useSource()
+function LinkTab({ onDone, target }: { onDone: () => void; target: LibraryTarget }) {
+  const select = useSource(target)
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   return (
@@ -367,7 +382,7 @@ function LinkTab({ onDone }: { onDone: () => void }) {
         onChange={(event) => setUrl(event.target.value)}
       />
       <button className="button button--primary" disabled={busy || !url}>
-        {busy ? 'Starting…' : 'Import'}
+        {busy ? 'Starting…' : target === 'select' ? 'Import' : TARGETS[target].action}
       </button>
       <p className="hint">
         Direct links work from GameBanana, GitHub, Dropbox, Google Drive and Discord. For other sites, download the file
@@ -377,16 +392,16 @@ function LinkTab({ onDone }: { onDone: () => void }) {
   )
 }
 
-export function Library({ onClose }: { onClose: () => void }) {
+export function Library({ onClose, target = 'select' }: { onClose: () => void; target?: LibraryTarget }) {
   const [tab, setTab] = useState<Tab>('gamebanana')
   const tabs: { id: Tab; label: string }[] = [
     { id: 'gamebanana', label: 'GameBanana' },
     { id: 'server', label: 'On this server' },
-    { id: 'upload', label: 'Upload' },
+    ...(target === 'select' ? [{ id: 'upload' as const, label: 'Upload' }] : []),
     { id: 'link', label: 'Link' },
   ]
   return (
-    <Modal title="Choose a pack" onClose={onClose} wide>
+    <Modal title={TARGETS[target].title} onClose={onClose} wide>
       <div className="tabs" role="tablist">
         {tabs.map((entry) => (
           <button
@@ -401,10 +416,10 @@ export function Library({ onClose }: { onClose: () => void }) {
           </button>
         ))}
       </div>
-      {tab === 'gamebanana' && <GameBananaTab onDone={onClose} />}
-      {tab === 'server' && <ServerTab onDone={onClose} />}
+      {tab === 'gamebanana' && <GameBananaTab onDone={onClose} target={target} />}
+      {tab === 'server' && <ServerTab onDone={onClose} target={target} />}
       {tab === 'upload' && <UploadTab onDone={onClose} />}
-      {tab === 'link' && <LinkTab onDone={onClose} />}
+      {tab === 'link' && <LinkTab onDone={onClose} target={target} />}
     </Modal>
   )
 }

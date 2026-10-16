@@ -136,6 +136,22 @@ export async function registerRoutes(app: FastifyInstance, deps: AppDeps): Promi
     return { job: await rooms.selectSource(code, playerId, body) }
   })
 
+  app.post('/api/rooms/:code/suggestions', async (request, reply) => {
+    const { code } = codeParams.parse(request.params)
+    const playerId = authenticate(request, code)
+    const body = sourceRequestSchema.parse(request.body)
+    const suggestion = await rooms.addSuggestion(code, playerId, body)
+    return reply.code(201).send({ id: suggestion.id })
+  })
+
+  app.post('/api/rooms/:code/queue', async (request, reply) => {
+    const { code } = codeParams.parse(request.params)
+    const playerId = authenticate(request, code)
+    const body = sourceRequestSchema.parse(request.body)
+    const entry = await rooms.addToQueue(code, playerId, body)
+    return reply.code(201).send({ id: entry.id })
+  })
+
   app.post('/api/rooms/:code/recordings', async (request) => {
     const { code } = codeParams.parse(request.params)
     const playerId = authenticate(request, code)

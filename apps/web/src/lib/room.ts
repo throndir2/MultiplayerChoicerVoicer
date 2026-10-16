@@ -66,7 +66,17 @@ export function useRoomConnection(session: SessionResponse | null): RoomConnecti
     socket.on(ServerEvents.assets, ({ playerId, assets }: { playerId: string; assets: AssetStatus }) =>
       setRoom((current) => (current ? patchPlayer(current, playerId, { assets }) : current)),
     )
-    socket.on(ServerEvents.job, (job: JobView) => setRoom((current) => (current ? { ...current, job } : current)))
+    socket.on(ServerEvents.job, (job: JobView) =>
+      setRoom((current) => {
+        if (!current) return current
+        const inQueue = current.queue.some((entry) => entry.job?.key === job.key)
+        return {
+          ...current,
+          job: inQueue && current.job?.key !== job.key ? current.job : job,
+          queue: inQueue ? current.queue.map((entry) => (entry.job?.key === job.key ? { ...entry, job } : entry)) : current.queue,
+        }
+      }),
+    )
     socket.on(ServerEvents.video, ({ packId, progress }: { packId: string; progress: number }) =>
       setRoom((current) =>
         current?.pack?.id === packId
@@ -128,6 +138,26 @@ export function useRoom(): RoomContextValue {
 }
 
 const manifestCache = new Map<string, PackManifest>()
+const manifestRequests = new Map<string, Promise<PackManifest | null>>()
+
+/** Loads a pack manifest one time for each `version`. */
+export function loadManifest(packId: string, version: string): Promise<PackManifest | null> {
+  const key = `${packId}:${version}`
+  const cached = manifestCache.get(key)
+  if (cached) return Promise.resolve(cached)
+  let request = manifestRequests.get(key)
+  if (!request) {
+    request = api<PackManifest>(`/api/packs/${encodeURIComponent(packId)}`)
+      .then((value) => {
+        manifestCache.set(key, value)
+        return value
+      })
+      .catch(() => null)
+      .finally(() => manifestRequests.delete(key))
+    manifestRequests.set(key, request)
+  }
+  return request
+}
 
 /** Loads a pack manifest. `version` forces a reload (for example when the video becomes ready). */
 export function useManifest(packId: string | null | undefined, version: string): PackManifest | null {
@@ -139,19 +169,15 @@ export function useManifest(packId: string | null | undefined, version: string):
       setManifest(null)
       return
     }
-    const key = `${packId}:${version}`
-    const cached = manifestCache.get(key)
+    const cached = manifestCache.get(`${packId}:${version}`)
     if (cached) {
       setManifest(cached)
       return
     }
     let cancelled = false
-    void api<PackManifest>(`/api/packs/${encodeURIComponent(packId)}`)
-      .then((value) => {
-        manifestCache.set(key, value)
-        if (!cancelled) setManifest(value)
-      })
-      .catch(() => undefined)
+    void loadManifest(packId, version).then((value) => {
+      if (value && !cancelled) setManifest(value)
+    })
     return () => {
       cancelled = true
     }

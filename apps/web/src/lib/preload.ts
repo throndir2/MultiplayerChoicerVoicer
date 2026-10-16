@@ -1,6 +1,28 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { ClientEvents, type AssetStatus, type PackManifest, type PlayerView, type RoomView } from '@mcv/shared'
 import { assets } from './assets'
+import { loadManifest } from './room'
+
+/** Bytes of a pack that are on this device, and the size of the pack. */
+export function packDownload(manifest: PackManifest): { loaded: number; total: number } {
+  let loaded = 0
+  let total = 0
+  const parts: [string | null, number][] = [
+    [manifest.videoUrl, manifest.videoBytes],
+    [manifest.backingUrl, manifest.backingBytes],
+    ...manifest.lines.flatMap((line): [string | null, number][] => [
+      [line.imageUrl, line.imageBytes],
+      [line.promptUrl, line.promptBytes],
+    ]),
+  ]
+  for (const [url, size] of parts) {
+    if (!url) continue
+    const part = fraction(url, size)
+    loaded += part.loaded
+    total += size || part.total
+  }
+  return { loaded, total }
+}
 
 function fraction(url: string | null | undefined, sizeHint: number): { loaded: number; total: number } {
   if (!url) return { loaded: 0, total: 0 }
@@ -33,10 +55,24 @@ export function usePreloader(
         .join(',')
     : ''
 
+  const queueKey = room.queue
+    .map((entry) => (entry.pack ? `${entry.pack.id}:${entry.pack.videoStatus}` : ''))
+    .filter(Boolean)
+    .join('|')
+
   useEffect(() => {
     if (!manifest) return
     const packPrefix = `/media/packs/${encodeURIComponent(manifest.id)}/`
-    assets.dropQueued((url) => !url.startsWith('/media/packs/') || url.startsWith(packPrefix))
+    const queuePrefixes = queueKey
+      .split('|')
+      .filter(Boolean)
+      .map((item) => `/media/packs/${encodeURIComponent(item.split(':')[0] ?? '')}/`)
+    assets.dropQueued(
+      (url) =>
+        !url.startsWith('/media/packs/') ||
+        url.startsWith(packPrefix) ||
+        queuePrefixes.some((prefix) => url.startsWith(prefix)),
+    )
     const mine = new Set(myLineKey ? myLineKey.split(',') : [])
     manifest.lines.forEach((line, index) => {
       const base = !round ? 20 : mine.has(line.id) ? 10 : 40
@@ -47,7 +83,30 @@ export function usePreloader(
     assets.prefetch(manifest.backingUrl, 30, manifest.backingBytes)
     assets.prefetch(manifest.iconUrl, 15)
     if (manifest.videoUrl) assets.prefetch(manifest.videoUrl, 50, manifest.videoBytes)
-  }, [manifest, myLineKey, round])
+  }, [manifest, myLineKey, round, queueKey])
+
+  // Queued packs download after every file of the current pack, in queue order.
+  useEffect(() => {
+    if (!queueKey) return
+    let cancelled = false
+    queueKey.split('|').forEach((item, order) => {
+      const [packId = '', videoStatus = ''] = item.split(':')
+      void loadManifest(packId, videoStatus).then((queued) => {
+        if (cancelled || !queued) return
+        const base = 100 + order * 10
+        assets.prefetch(queued.iconUrl, base)
+        queued.lines.forEach((line, index) => {
+          assets.prefetch(line.imageUrl, base + 1 + index / 10_000, line.imageBytes)
+          assets.prefetch(line.promptUrl, base + 1 + index / 10_000, line.promptBytes)
+        })
+        assets.prefetch(queued.backingUrl, base + 2, queued.backingBytes)
+        if (queued.videoUrl) assets.prefetch(queued.videoUrl, base + 3, queued.videoBytes)
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [queueKey])
 
   const recordingKey = round
     ? round.dubs.flatMap((dub) => Object.values(dub.recordings).map((recording) => recording.url)).join('|')

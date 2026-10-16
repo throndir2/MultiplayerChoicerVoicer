@@ -8,6 +8,7 @@ export interface DownloadOptions {
   maxBytes: number
   userAgent: string
   expectedSize?: number
+  signal?: AbortSignal
   onProgress?: (received: number, total: number) => void
 }
 
@@ -47,6 +48,8 @@ export async function downloadToFile(
   options: DownloadOptions,
 ): Promise<DownloadResult> {
   let current = new URL(source)
+  const timeout = AbortSignal.timeout(60 * 60_000)
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
   for (let hop = 0; hop < 8; hop += 1) {
     if (!isHostAllowed(current, options.allowedHosts)) {
       throw new Error(`Downloads from ${current.hostname} are not allowed`)
@@ -54,7 +57,7 @@ export async function downloadToFile(
     const response = await fetch(current, {
       redirect: 'manual',
       headers: { 'user-agent': options.userAgent, accept: '*/*' },
-      signal: AbortSignal.timeout(60 * 60_000),
+      signal,
     })
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location')
@@ -89,6 +92,7 @@ export async function downloadToFile(
       Readable.fromWeb(response.body as unknown as WebReadableStream<Uint8Array>),
       counter,
       createWriteStream(destination),
+      { signal },
     )
     options.onProgress?.(received, total || received)
     return {

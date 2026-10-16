@@ -5,6 +5,8 @@ import type { FastifyBaseLogger } from 'fastify'
 import {
   DEFAULT_ROOM_SETTINGS,
   MAX_PLAYERS,
+  MAX_QUEUE,
+  MAX_SUGGESTIONS,
   PLAYBACK_LEAD_MS,
   PLAYER_COLORS,
   SCORE_SAMPLE_RATE,
@@ -18,8 +20,11 @@ import {
   type GameMode,
   type JobView,
   type PackManifest,
+  type PackPick,
+  type PackRequest,
   type PlaybackState,
   type ProgressView,
+  type QueueEntryView,
   type RecordingView,
   type RoomInfoResponse,
   type RoomPhase,
@@ -57,6 +62,12 @@ interface PlayerRecord {
   spectator: boolean
 }
 
+interface QueueRecord extends PackPick {
+  jobKey: string | null
+  packIds: string[]
+  error: string | null
+}
+
 interface RoomRecord {
   id: string
   code: string
@@ -69,6 +80,8 @@ interface RoomRecord {
   packId: string | null
   packChoices: string[]
   jobKey: string | null
+  suggestions: PackPick[]
+  queue: QueueRecord[]
   cast: Record<string, string>
   round: RoundView | null
   playback: PlaybackState | null
@@ -81,6 +94,12 @@ interface RoomsFile {
 }
 
 const HOST_GRACE_MS = 60_000
+
+function requestKey(request: PackRequest): string {
+  if (request.kind === 'gamebanana') return `gb:${request.fileId}`
+  if (request.kind === 'url') return `url:${request.url}`
+  return `pack:${request.packId}`
+}
 
 const AUDIO_EXTENSIONS: Record<string, string> = {
   'audio/webm': 'webm',
@@ -223,6 +242,8 @@ export class RoomService extends EventEmitter {
     for (const room of stored?.rooms ?? []) {
       room.emptySince = now
       room.settings = { ...DEFAULT_ROOM_SETTINGS, ...room.settings }
+      room.suggestions ??= []
+      room.queue ??= []
       if (room.round) room.round.finished ??= {}
       if (room.playback?.status === 'playing') {
         room.playback = { ...room.playback, status: 'paused', position: playbackPosition(room.playback, now), startedAt: now }
@@ -235,6 +256,13 @@ export class RoomService extends EventEmitter {
     }
     this.sweepTimer = setInterval(() => void this.sweep(), 10 * 60_000)
     this.log.info({ rooms: this.rooms.size }, 'rooms loaded')
+    // Jobs that were running before the restart are gone. Start them again for the queued packs.
+    for (const room of this.rooms.values()) {
+      for (const entry of room.queue) {
+        if (entry.packIds.length > 0 || entry.error || this.packs.job(entry.jobKey)) continue
+        void this.prepareEntry(room, entry).then(() => this.changed(room))
+      }
+    }
   }
 
   async shutdown(): Promise<void> {
@@ -294,7 +322,12 @@ export class RoomService extends EventEmitter {
   }
 
   private roomUsesPack(room: RoomRecord, packId: string): boolean {
-    return room.packId === packId || room.packChoices.includes(packId) || room.round?.packId === packId
+    return (
+      room.packId === packId ||
+      room.packChoices.includes(packId) ||
+      room.round?.packId === packId ||
+      room.queue.some((entry) => entry.packIds.includes(packId))
+    )
   }
 
   isPackInUse(packId: string): boolean {
@@ -348,6 +381,8 @@ export class RoomService extends EventEmitter {
       packId: null,
       packChoices: [],
       jobKey: null,
+      suggestions: [],
+      queue: [],
       cast: {},
       round: null,
       playback: null,
@@ -473,6 +508,21 @@ export class RoomService extends EventEmitter {
       pack: room.packId ? this.packs.summary(room.packId) : null,
       packChoices: room.packChoices.map((id) => this.packs.summary(id)).filter((value) => value !== null),
       job: this.packs.job(room.jobKey),
+      suggestions: room.suggestions,
+      queue: room.queue.map(
+        (entry): QueueEntryView => ({
+          id: entry.id,
+          request: entry.request,
+          title: entry.title,
+          pageUrl: entry.pageUrl,
+          imageUrl: entry.imageUrl,
+          by: entry.by,
+          at: entry.at,
+          job: this.packs.job(entry.jobKey),
+          pack: entry.packIds[0] ? this.packs.summary(entry.packIds[0]) : null,
+          error: entry.error,
+        }),
+      ),
       cast: room.cast,
       round: room.round,
       playback: room.playback,
@@ -506,56 +556,136 @@ export class RoomService extends EventEmitter {
 
   private onJob(job: JobView): void {
     for (const room of this.rooms.values()) {
-      if (room.jobKey !== job.key) continue
-      if (job.stage === 'ready') {
-        if (room.phase === 'lobby' || room.phase === 'results') this.applyPack(room, job.packIds)
-        room.jobKey = null
-        this.changed(room)
-      } else if (job.stage === 'error') {
-        this.changed(room)
-      } else {
-        this.emit('job', room.code, job)
+      let stateChanged = false
+      let progress = false
+      for (const entry of room.queue) {
+        if (entry.jobKey !== job.key) continue
+        if (job.stage === 'ready') {
+          entry.packIds = job.packIds
+          entry.jobKey = null
+          stateChanged = true
+        } else if (job.stage === 'error') {
+          entry.error = job.message ?? 'The pack could not be prepared'
+          entry.jobKey = null
+          stateChanged = true
+        } else {
+          progress = true
+        }
       }
+      if (room.jobKey === job.key) {
+        if (job.stage === 'ready') {
+          if (room.phase === 'lobby' || room.phase === 'results') this.applyPack(room, job.packIds)
+          room.jobKey = null
+          stateChanged = true
+        } else if (job.stage === 'error') {
+          stateChanged = true
+        } else {
+          progress = true
+        }
+      }
+      if (stateChanged) this.changed(room)
+      else if (progress) this.emit('job', room.code, job)
     }
+  }
+
+  /** Stops a server job when no room and no queue needs it any more. */
+  private releaseJob(key: string | null): void {
+    if (!key) return
+    for (const room of this.rooms.values()) {
+      if (room.jobKey === key || room.queue.some((entry) => entry.jobKey === key)) return
+    }
+    this.packs.cancel(key)
+  }
+
+  private setJob(room: RoomRecord, key: string | null): void {
+    const previous = room.jobKey
+    room.jobKey = key
+    if (previous && previous !== key) this.releaseJob(previous)
   }
 
   private attachJob(room: RoomRecord, job: JobView): JobView {
     if (job.stage === 'ready') {
+      this.setJob(room, null)
       this.applyPack(room, job.packIds)
-      room.jobKey = null
     } else {
-      room.jobKey = job.key
+      this.setJob(room, job.key)
     }
     this.changed(room)
     return job
+  }
+
+  /** Checks a pack request and finds its title, page and picture. GameBanana links become GameBanana requests. */
+  private async resolvePick(request: SourceRequest): Promise<Pick<PackPick, 'request' | 'title' | 'pageUrl' | 'imageUrl'>> {
+    if (request.kind === 'pack') {
+      const manifest = this.packs.manifest(request.packId)
+      if (!manifest) throw new RoomError('That pack is no longer on the server', 404)
+      return {
+        request: { kind: 'pack', packId: manifest.id },
+        title: manifest.title,
+        pageUrl: manifest.source.pageUrl ?? null,
+        imageUrl: manifest.iconUrl,
+      }
+    }
+    const modId = request.kind === 'gamebanana' ? request.modId : parseGameBananaModUrl(request.url)
+    if (modId) {
+      const details = await this.catalog.details(modId).catch(() => {
+        throw new RoomError('GameBanana did not return that mod')
+      })
+      const file =
+        request.kind === 'gamebanana'
+          ? details.files.find((entry) => entry.id === request.fileId)
+          : (details.files.find((entry) => entry.isArchive) ?? details.files[0])
+      if (!file) {
+        throw new RoomError(request.kind === 'gamebanana' ? 'That file does not belong to the mod' : 'That GameBanana mod has no files')
+      }
+      if (file.size > this.config.downloadMaxBytes) throw new RoomError('That pack is larger than the download limit')
+      return {
+        request: { kind: 'gamebanana', modId, fileId: file.id },
+        title: details.name,
+        pageUrl: details.profileUrl,
+        imageUrl: details.images[0] ?? null,
+      }
+    }
+    if (request.kind !== 'url') throw new RoomError('Unknown pack')
+    const url = new URL(request.url)
+    if (!isHostAllowed(url, this.config.importHosts)) {
+      throw new RoomError(`Links from ${url.hostname} are not allowed. Upload the file instead.`)
+    }
+    let title = url.hostname
+    try {
+      title = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() ?? url.hostname)
+    } catch {
+      // Keep the host name.
+    }
+    return { request: { kind: 'url', url: request.url }, title, pageUrl: null, imageUrl: null }
+  }
+
+  /** Starts (or finds) the server job for a request. Null for a pack that is already on the server. */
+  private async startRequest(request: PackRequest, uploader: string): Promise<JobView | null> {
+    if (request.kind === 'pack') return null
+    if (request.kind === 'gamebanana') return this.gamebananaJob(request.modId, request.fileId)
+    return this.packs.requestUrl(request.url, uploader)
+  }
+
+  /** Makes the request the current pack of the room, or starts its download. */
+  private async useRequest(room: RoomRecord, request: PackRequest, uploader: string): Promise<JobView | null> {
+    if (request.kind === 'pack') {
+      if (!this.packs.manifest(request.packId)) throw new RoomError('That pack is no longer on the server', 404)
+      this.setJob(room, null)
+      this.applyPack(room, [request.packId])
+      this.changed(room)
+      return null
+    }
+    const job = await this.startRequest(request, uploader)
+    return job ? this.attachJob(room, job) : null
   }
 
   async selectSource(code: string, actorId: string, request: SourceRequest): Promise<JobView | null> {
     const room = this.get(code)
     this.requireHost(room, actorId)
     this.requirePhase(room, 'lobby', 'results')
-    if (request.kind === 'pack') {
-      if (!this.packs.manifest(request.packId)) throw new RoomError('That pack is no longer on the server', 404)
-      this.applyPack(room, [request.packId])
-      room.jobKey = null
-      this.changed(room)
-      return null
-    }
-    if (request.kind === 'gamebanana') return this.attachJob(room, await this.gamebananaJob(request.modId, request.fileId))
-    const modId = parseGameBananaModUrl(request.url)
-    if (modId) {
-      const details = await this.catalog.details(modId).catch(() => {
-        throw new RoomError('GameBanana did not return that mod')
-      })
-      const file = details.files.find((entry) => entry.isArchive) ?? details.files[0]
-      if (!file) throw new RoomError('That GameBanana mod has no files')
-      return this.attachJob(room, await this.gamebananaJob(modId, file.id))
-    }
-    const url = new URL(request.url)
-    if (!isHostAllowed(url, this.config.importHosts)) {
-      throw new RoomError(`Links from ${url.hostname} are not allowed. Upload the file instead.`)
-    }
-    return this.attachJob(room, this.packs.requestUrl(request.url, this.playerName(code, actorId)))
+    const pick = await this.resolvePick(request)
+    return this.useRequest(room, pick.request, this.playerName(code, actorId))
   }
 
   private async gamebananaJob(modId: number, fileId: number): Promise<JobView> {
@@ -571,7 +701,170 @@ export class RoomService extends EventEmitter {
       modName: details.name,
       fileName: file.name,
       size: file.size,
+      pageUrl: details.profileUrl,
+      images: details.images,
+      description: details.description || details.text,
     })
+  }
+
+  /** The host stops the download of the current pack, or dismisses its error. */
+  cancelJob(code: string, actorId: string): void {
+    const room = this.get(code)
+    this.requireHost(room, actorId)
+    if (!room.jobKey) return
+    this.setJob(room, null)
+    this.changed(room)
+  }
+
+  // ---------------------------------------------------------------- suggestions and queue
+
+  private requireMember(room: RoomRecord, actorId: string): PlayerRecord {
+    const player = room.players.find((entry) => entry.id === actorId)
+    if (!player) throw new RoomError('Unknown player', 403)
+    return player
+  }
+
+  /** After the host uses a pack on the results page, the room goes back to the lobby with the new pack. */
+  private leaveResults(room: RoomRecord): void {
+    if (room.phase !== 'results') return
+    room.phase = 'lobby'
+    room.round = null
+    room.playback = null
+    room.votes = {}
+  }
+
+  async addSuggestion(code: string, actorId: string, request: SourceRequest): Promise<PackPick> {
+    const room = this.get(code)
+    this.requireMember(room, actorId)
+    const resolved = await this.resolvePick(request)
+    const key = requestKey(resolved.request)
+    const existing = room.suggestions.find((entry) => requestKey(entry.request) === key)
+    if (existing) return existing
+    if (room.queue.some((entry) => requestKey(entry.request) === key)) {
+      throw new RoomError('That pack is already in the queue', 409)
+    }
+    if (room.suggestions.length >= MAX_SUGGESTIONS) {
+      throw new RoomError('There are too many suggestions. The host must remove some first.', 409)
+    }
+    const suggestion: PackPick = { id: randomId(8), ...resolved, by: actorId, at: Date.now() }
+    room.suggestions.push(suggestion)
+    this.changed(room)
+    return suggestion
+  }
+
+  removeSuggestion(code: string, actorId: string, id: string): void {
+    const room = this.get(code)
+    const entry = room.suggestions.find((value) => value.id === id)
+    if (!entry) return
+    if (entry.by !== actorId) this.requireHost(room, actorId)
+    room.suggestions = room.suggestions.filter((value) => value.id !== id)
+    this.changed(room)
+  }
+
+  async useSuggestion(code: string, actorId: string, id: string): Promise<void> {
+    const room = this.get(code)
+    this.requireHost(room, actorId)
+    this.requirePhase(room, 'lobby', 'results')
+    const entry = room.suggestions.find((value) => value.id === id)
+    if (!entry) throw new RoomError('That suggestion was removed', 404)
+    await this.useRequest(room, entry.request, this.playerName(code, entry.by))
+    room.suggestions = room.suggestions.filter((value) => value.id !== id)
+    this.leaveResults(room)
+    this.changed(room)
+  }
+
+  /** Starts the server job of a queued pack, so that it is ready when the host wants it. */
+  private async prepareEntry(room: RoomRecord, entry: QueueRecord): Promise<void> {
+    entry.error = null
+    try {
+      if (entry.request.kind === 'pack') {
+        if (!this.packs.manifest(entry.request.packId)) throw new RoomError('That pack is no longer on the server')
+        entry.packIds = [entry.request.packId]
+        entry.jobKey = null
+        return
+      }
+      const uploader = room.players.find((player) => player.id === entry.by)?.name ?? 'Player'
+      const job = await this.startRequest(entry.request, uploader)
+      if (!job) return
+      if (job.stage === 'ready') {
+        entry.packIds = job.packIds
+        entry.jobKey = null
+        for (const packId of job.packIds) this.packs.touch(packId)
+      } else if (job.stage === 'error') {
+        entry.error = job.message ?? 'The pack could not be prepared'
+        entry.jobKey = null
+      } else {
+        entry.jobKey = job.key
+      }
+    } catch (error) {
+      entry.jobKey = null
+      entry.error = error instanceof RoomError ? error.message : 'The pack could not be prepared'
+      if (!(error instanceof RoomError)) this.log.warn({ err: error }, 'queued pack failed')
+    }
+  }
+
+  private async enqueue(room: RoomRecord, pick: PackPick): Promise<QueueRecord> {
+    const key = requestKey(pick.request)
+    const existing = room.queue.find((entry) => requestKey(entry.request) === key)
+    if (!existing && room.queue.length >= MAX_QUEUE) throw new RoomError(`The queue is full (${MAX_QUEUE} packs)`, 409)
+    room.suggestions = room.suggestions.filter((value) => requestKey(value.request) !== key)
+    if (existing) {
+      this.changed(room)
+      return existing
+    }
+    const entry: QueueRecord = { ...pick, jobKey: null, packIds: [], error: null }
+    room.queue.push(entry)
+    this.changed(room)
+    await this.prepareEntry(room, entry)
+    // The host can remove the entry while the server looks up the pack.
+    if (!room.queue.includes(entry)) this.releaseJob(entry.jobKey)
+    this.changed(room)
+    return entry
+  }
+
+  async addToQueue(code: string, actorId: string, request: SourceRequest): Promise<PackPick> {
+    const room = this.get(code)
+    this.requireHost(room, actorId)
+    const resolved = await this.resolvePick(request)
+    return this.enqueue(room, { id: randomId(8), ...resolved, by: actorId, at: Date.now() })
+  }
+
+  async queueSuggestion(code: string, actorId: string, id: string): Promise<void> {
+    const room = this.get(code)
+    this.requireHost(room, actorId)
+    const entry = room.suggestions.find((value) => value.id === id)
+    if (!entry) throw new RoomError('That suggestion was removed', 404)
+    await this.enqueue(room, entry)
+  }
+
+  async useQueueEntry(code: string, actorId: string, id: string): Promise<void> {
+    const room = this.get(code)
+    this.requireHost(room, actorId)
+    this.requirePhase(room, 'lobby', 'results')
+    const entry = room.queue.find((value) => value.id === id)
+    if (!entry) throw new RoomError('That pack is no longer in the queue', 404)
+    const job = this.packs.job(entry.jobKey)
+    if (entry.packIds.length > 0 && entry.packIds.every((packId) => this.packs.manifest(packId))) {
+      this.setJob(room, null)
+      this.applyPack(room, entry.packIds)
+    } else if (job && job.stage !== 'error') {
+      this.attachJob(room, job)
+    } else {
+      await this.useRequest(room, entry.request, this.playerName(code, entry.by))
+    }
+    room.queue = room.queue.filter((value) => value.id !== id)
+    this.leaveResults(room)
+    this.changed(room)
+  }
+
+  removeQueueEntry(code: string, actorId: string, id: string): void {
+    const room = this.get(code)
+    this.requireHost(room, actorId)
+    const entry = room.queue.find((value) => value.id === id)
+    if (!entry) return
+    room.queue = room.queue.filter((value) => value.id !== id)
+    this.releaseJob(entry.jobKey)
+    this.changed(room)
   }
 
   attachUploadJob(code: string, actorId: string, job: JobView): JobView {

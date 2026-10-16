@@ -112,7 +112,41 @@ export interface JobView {
   progress: number
   message?: string
   packIds: string[]
+  /** The GameBanana page, so that the players can check the pack (for example its language) during the download. */
+  pageUrl?: string
+  /** Preview pictures from GameBanana. */
+  images?: string[]
+  description?: string
 }
+
+/** A normalised pack request: a GameBanana file, a direct link, or a pack that is already on the server. */
+export type PackRequest =
+  | { kind: 'gamebanana'; modId: number; fileId: number }
+  | { kind: 'url'; url: string }
+  | { kind: 'pack'; packId: string }
+
+/** A pack that a player suggested, or that the host put in the queue. */
+export interface PackPick {
+  id: string
+  request: PackRequest
+  title: string
+  pageUrl: string | null
+  imageUrl: string | null
+  /** playerId of the player who added it. */
+  by: string
+  at: number
+}
+
+export interface QueueEntryView extends PackPick {
+  /** The server job that downloads and prepares the pack. Null when the pack is ready or failed. */
+  job: JobView | null
+  /** The first prepared pack, when the server is done. */
+  pack: PackSummary | null
+  error: string | null
+}
+
+export const MAX_SUGGESTIONS = 30
+export const MAX_QUEUE = 10
 
 export interface CatalogItem {
   id: number
@@ -267,6 +301,10 @@ export interface RoomView {
   pack: PackSummary | null
   packChoices: PackSummary[]
   job: JobView | null
+  /** Packs that players suggested. The host can use them now, put them in the queue, or remove them. */
+  suggestions: PackPick[]
+  /** Packs that the host queued. The server prepares them in the background. */
+  queue: QueueEntryView[]
   /** character name -> playerId */
   cast: Record<string, string>
   round: RoundView | null
@@ -311,6 +349,13 @@ export interface TimeSyncAck extends Ack {
 export const ClientEvents = {
   settingsUpdate: 'settings:update',
   packSelect: 'pack:select',
+  /** Stops the download of the current pack (or dismisses its error). */
+  jobCancel: 'job:cancel',
+  suggestionUse: 'suggestion:use',
+  suggestionQueue: 'suggestion:queue',
+  suggestionRemove: 'suggestion:remove',
+  queueUse: 'queue:use',
+  queueRemove: 'queue:remove',
   castAssign: 'cast:assign',
   castAuto: 'cast:auto',
   roundStart: 'round:start',

@@ -6,6 +6,7 @@ export interface RunOptions {
   onStdoutLine?: (line: string) => void
   timeoutMs?: number
   cwd?: string
+  signal?: AbortSignal
 }
 
 export interface RunResult {
@@ -28,6 +29,7 @@ export function runCommand(command: string, args: string[], options: RunOptions 
       cwd: options.cwd,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
+      ...(options.signal ? { signal: options.signal, killSignal: 'SIGKILL' as const } : {}),
     })
     let stdout = ''
     let stderr = ''
@@ -333,9 +335,10 @@ export class Media {
     })
   }
 
-  async extractArchive(archive: string, destination: string): Promise<void> {
+  async extractArchive(archive: string, destination: string, signal?: AbortSignal): Promise<void> {
     await runCommand(this.config.archiveTool, ['-x', '-f', archive, '-C', destination], {
       timeoutMs: 30 * 60_000,
+      ...(signal ? { signal } : {}),
     })
   }
 

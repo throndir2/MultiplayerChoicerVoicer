@@ -3,6 +3,7 @@ import { ClientEvents, dubMatchScore, dubMatchScores, type DubView } from '@mcv/
 import { PlayerChip, ProgressBar, ScoreBadge, percent } from '../components/ui'
 import { useRoom } from '../lib/room'
 import { DubPlayer } from './DubPlayer'
+import { PackLists } from './PackLists'
 import { dubTitle } from './PlaybackView'
 import { WatchModal } from './VotingView'
 
@@ -98,6 +99,16 @@ export function ResultsView() {
               <button type="button" className="button button--primary" onClick={() => run(ClientEvents.roundStart)}>
                 Play again with this pack
               </button>
+              {room.queue[0] && (
+                <button
+                  type="button"
+                  className="button button--primary"
+                  title="Go to the lobby with the first pack in the queue"
+                  onClick={() => run(ClientEvents.queueUse, { id: room.queue[0]?.id })}
+                >
+                  ⏭ Next pack: {room.queue[0].title}
+                </button>
+              )}
               <button type="button" className="button button--ghost" onClick={() => run(ClientEvents.phaseSet, { phase: 'lobby' })}>
                 Back to the lobby
               </button>
@@ -174,6 +185,7 @@ export function ResultsView() {
         </label>
       )}
       {!isHost && <p className="hint">The host can start a new round or go back to the lobby.</p>}
+      <PackLists />
       {watching && <WatchModal dub={watching} onClose={() => setWatching(null)} />}
     </div>
   )

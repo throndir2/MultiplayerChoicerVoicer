@@ -8,6 +8,7 @@ import {
   assetStatusSchema,
   castAssignSchema,
   dubTargetSchema,
+  entryTargetSchema,
   packSelectSchema,
   phaseSetSchema,
   playbackControlSchema,
@@ -145,6 +146,12 @@ export function attachRealtime(httpServer: HttpServer, rooms: RoomService, log: 
       rooms.updateSettings(code, playerId, clean)
     })
     command(ClientEvents.packSelect, packSelectSchema, ({ packId }) => rooms.selectPack(code, playerId, packId))
+    command(ClientEvents.jobCancel, playerTargetSchema.partial(), () => rooms.cancelJob(code, playerId))
+    command(ClientEvents.suggestionUse, entryTargetSchema, ({ id }) => rooms.useSuggestion(code, playerId, id))
+    command(ClientEvents.suggestionQueue, entryTargetSchema, ({ id }) => rooms.queueSuggestion(code, playerId, id))
+    command(ClientEvents.suggestionRemove, entryTargetSchema, ({ id }) => rooms.removeSuggestion(code, playerId, id))
+    command(ClientEvents.queueUse, entryTargetSchema, ({ id }) => rooms.useQueueEntry(code, playerId, id))
+    command(ClientEvents.queueRemove, entryTargetSchema, ({ id }) => rooms.removeQueueEntry(code, playerId, id))
     command(ClientEvents.castAssign, castAssignSchema, ({ character, playerId: target }) =>
       rooms.castAssign(code, playerId, character, target),
     )
