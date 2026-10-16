@@ -56,6 +56,22 @@ The random pack is a way to choose a pack, not a game mode. It works with every 
 - On the results page, a new random pack becomes the next pack. The start button then shows "Play “title”".
 - The room keeps the keywords and the played mods in `rooms.json`.
 
+### Suggestions and the queue
+
+- **Suggestions.** Every player can suggest a pack ("💡 Suggest a pack" in the "Next packs" card of the lobby and the results page). The Library opens with the GameBanana, "On this server" and "Link" tabs. Everybody sees each suggestion with its picture, its GameBanana link and the player who suggested it. The host can use it now, put it in the queue, or remove it. The player who suggested a pack can also remove it. A room has a maximum of 30 suggestions.
+- **Queue.** The host can add packs to the queue ("➕ Add to the queue", or "Queue" on a suggestion). The server starts the download and the processing of each queued pack immediately, in the background (at most 2 jobs at the same time, as for all jobs). When a queued pack is ready, the browsers download its files after all the files of the current pack (see section 9). Each queue entry shows the server progress, then how much of the pack is on this device. The queue has a maximum of 10 packs.
+- **Use a queued pack.** "▶ Use now" makes the queued pack the current pack. If the server has not finished it, the room waits for its job. On the results page, the host has the button "⏭ Next pack: title". It takes the first queued pack and goes back to the lobby. Using a suggestion or a queued pack on the results page always goes back to the lobby.
+- **Remove from the queue.** "✕ Remove" takes the pack out of the queue. The server stops its job if no other room and no other queue needs it.
+- The room keeps the suggestions and the queue in `rooms.json`. After a server restart, the server starts the jobs of the queued packs that were not ready again.
+
+### While the server prepares a pack
+
+- The pack card shows the name of the pack, the stage and the progress, up to 3 preview pictures, the text from GameBanana and the link "Open on GameBanana ↗". So the group can check the pack early, for example its language.
+- The host has two controls:
+  - **✕ Cancel** stops the download and forgets the pack. The server aborts the download, the extraction and the processing, and deletes the files of the job, when no other room or queue needs the job. For a job that failed, the button is "Dismiss".
+  - **🔍 Find another pack** cancels the pack and opens the Library. After a random pick, the button is "🎲 Another random pack" and gets a new random pack instead.
+- When the host chooses a different pack while a pack downloads, the server also stops the old job if nobody needs it.
+
 The home screen and the "Upload" tab have a "Create your own Choicer Voicer pack" button. It opens [ChoicerVoicerPackCreator](https://github.com/throndir2/ChoicerVoicerPackCreator), a free Windows app that makes a pack from a video or a YouTube link.
 
 The API endpoints that we use:
@@ -84,7 +100,7 @@ The server runs one video conversion at a time, because Nahida has a small CPU.
 
 - A player creates a room and gets a 5-character code (no 0, O, 1, I or L). The invite link is `https://<host>/join/<CODE>`.
 - The player token is a random 32-byte value. The browser keeps it in `sessionStorage`. Each tab is a different player, which makes testing easy. If a player closes the tab, they can join again with the same name. They then get the same seat back if that seat is disconnected.
-- The creator is the host. The host chooses the pack, the mode and the cast. Every player can add keywords for a random pack. The host can remove players and can give the host role to a different player. If the host is away for 60 seconds, the next connected player becomes the host.
+- The creator is the host. The host chooses the pack, the mode and the cast. Every player can add keywords for a random pack and suggest packs. Only the host can use a suggestion, change the queue or cancel a download. The host can remove players and can give the host role to a different player. If the host is away for 60 seconds, the next connected player becomes the host.
 - The rooms are kept in memory and written to `rooms.json`, so a restart does not lose them. A room without connected players for 6 hours is deleted together with its recordings.
 
 ## 6. Game modes
@@ -147,7 +163,7 @@ Yes. A website can store large files without a download prompt. The files do not
 - Chrome and Edge allow a site to use up to about 60% of the free disk space. Firefox allows about 10%. Safari allows about 1 GB before it asks. A typical pack is 5 MB to 300 MB after processing.
 - The client calls `navigator.storage.persist()` so that the browser does not remove the files while a game runs.
 - The **asset manager** in the client:
-  1. downloads files in priority order: the images and prompts for my lines first, then recordings from other players, then the backing track, then the video;
+  1. downloads files in priority order: the images and prompts for my lines first, then recordings from other players, then the backing track, then the video. The files of the queued packs come last, in queue order;
   2. downloads at most 3 files at the same time;
   3. continues a failed download from the last byte with an HTTP `Range` request (important on slow or unstable connections);
   4. starts as soon as the host selects a pack, and gets each new recording of another player as soon as the server announces it;

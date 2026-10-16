@@ -7,8 +7,9 @@ import { useAssetsVersion } from '../lib/preload'
 import { useRoom } from '../lib/room'
 import { roomInUse } from '../lib/storage'
 import { Library } from './Library'
+import { JobProgress, PackLists, STAGE_TEXT } from './PackLists'
 import { PlayersPanel } from './PlayersPanel'
-import { KeywordsCard, RandomPickNote } from './RandomPack'
+import { KeywordsCard, RandomPickNote, useRandomPack } from './RandomPack'
 
 const MODES: { id: GameMode; icon: string; title: string; text: string }[] = [
   {
@@ -31,31 +32,77 @@ const MODES: { id: GameMode; icon: string; title: string; text: string }[] = [
   },
 ]
 
-const STAGE_TEXT: Record<JobView['stage'], string> = {
-  queued: 'Waiting for the server',
-  resolving: 'Starting',
-  downloading: 'The server downloads the pack',
-  extracting: 'The server unpacks the pack',
-  processing: 'The server prepares the lines',
-  ready: 'Ready',
-  error: 'Failed',
-}
+const STAGE_HINT = 'Check the pack now, for example its language. The host can cancel the download.'
 
-export function JobStatus({ job }: { job: JobView }) {
+/**
+ * The pack that the server prepares: its name, its GameBanana page, pictures and text, and the host controls.
+ * "Find another" gets a new random pack after a random pick. Otherwise it cancels and calls `onChoose`.
+ */
+export function JobStatus({ job, onChoose }: { job: JobView; onChoose?: (() => void) | undefined }) {
+  const { room, isHost, command, notify } = useRoom()
+  const random = useRandomPack()
   if (job.stage === 'ready') return null
+  const failed = job.stage === 'error'
+  const randomPick = room.randomPick && !room.randomPick.searching ? room.randomPick : null
+
+  async function cancel(): Promise<boolean> {
+    try {
+      await command(ClientEvents.jobCancel)
+      return true
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not cancel')
+      return false
+    }
+  }
+
+  function findAnother() {
+    // The server stops the old download when the new pick replaces it.
+    if (randomPick) void random.roll()
+    else void cancel().then((ok) => ok && onChoose?.())
+  }
+
   return (
-    <div className={`job${job.stage === 'error' ? ' job--error' : ''}`}>
+    <div className={`job${failed ? ' job--error' : ''}`}>
       <div className="job__title">
         <strong>{job.label}</strong> — {STAGE_TEXT[job.stage]}
       </div>
-      {job.stage === 'error' ? (
+      {failed ? (
         <p className="error-text">{job.message ?? 'The pack could not be prepared.'}</p>
       ) : (
-        <ProgressBar
-          value={job.progress}
-          indeterminate={job.stage === 'extracting' || job.stage === 'queued' || job.stage === 'resolving'}
-          label={job.stage === 'downloading' || job.stage === 'processing' ? percent(job.progress) : ''}
-        />
+        <JobProgress job={job} />
+      )}
+      {(job.pageUrl || job.images?.length || job.description) && (
+        <div className="job__preview">
+          {job.images && job.images.length > 0 && (
+            <div className="job__images">
+              {job.images.slice(0, 3).map((image) => (
+                <a key={image} href={job.pageUrl ?? image} target="_blank" rel="noreferrer">
+                  <img src={image} alt="" loading="lazy" />
+                </a>
+              ))}
+            </div>
+          )}
+          {job.description && <p className="job__description">{job.description}</p>}
+          {job.pageUrl && (
+            <a href={job.pageUrl} target="_blank" rel="noreferrer">
+              Open on GameBanana ↗
+            </a>
+          )}
+        </div>
+      )}
+      {isHost ? (
+        <div className="button-row job__actions">
+          {(randomPick || onChoose) && (
+            <button type="button" className="button button--small" disabled={random.searching} onClick={findAnother}>
+              {randomPick ? '🎲 Another random pack' : '🔍 Find another pack'}
+            </button>
+          )}
+          <button type="button" className="button button--small button--ghost" onClick={() => void cancel()}>
+            {failed ? 'Dismiss' : '✕ Cancel'}
+          </button>
+        </div>
+      ) : (
+        !failed && <p className="hint">{STAGE_HINT}</p>
       )}
     </div>
   )
@@ -90,8 +137,9 @@ function PackCard({ onChoose }: { onChoose: () => void }) {
           </button>
         ) : null}
       </div>
-      {job && <JobStatus job={job} />}
-      <RandomPickNote withButton />
+      {job && <JobStatus job={job} onChoose={isHost ? onChoose : undefined} />}
+      {/* While a job runs, "Another random pack" is in the job controls. */}
+      <RandomPickNote withButton={!job} />
       {!pack && !job && (
         <p className="muted">
           {isHost
@@ -316,6 +364,7 @@ export function Lobby() {
       </aside>
       <div className="lobby__main">
         <PackCard onChoose={() => setLibrary(true)} />
+        <PackLists />
         <KeywordsCard />
         <section className="card">
           <h2>Game mode</h2>

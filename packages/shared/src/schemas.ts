@@ -57,6 +57,7 @@ export const keywordAddSchema = z.object({ text: z.string().min(1).max(MAX_KEYWO
 export const keywordRemoveSchema = z.object({ keyword: z.string().min(1).max(MAX_KEYWORD_LENGTH * 2) })
 
 export const packSelectSchema = z.object({ packId: z.string().min(1).max(80) })
+export const entryTargetSchema = z.object({ id: z.string().min(1).max(32) })
 export const castAssignSchema = z.object({
   character: z.string().min(1).max(200),
   playerId: z.string().max(64).nullable(),

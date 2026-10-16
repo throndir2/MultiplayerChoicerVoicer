@@ -31,7 +31,12 @@ interface PackIndexFile {
   jobs: JobRecord[]
 }
 
-type Fetcher = (workDir: string, job: JobRecord) => Promise<string>
+type Fetcher = (workDir: string, job: JobRecord, signal: AbortSignal) => Promise<string>
+
+interface PendingJob {
+  job: JobRecord
+  run: () => Promise<void>
+}
 
 export const PACK_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/
 
@@ -71,7 +76,8 @@ export class PackService extends EventEmitter {
   private readonly videoQueue: string[] = []
   private videoBusy = false
   private runningJobs = 0
-  private readonly pendingJobs: (() => Promise<void>)[] = []
+  private readonly pendingJobs: PendingJob[] = []
+  private readonly aborts = new WeakMap<JobRecord, AbortController>()
   private saveTimer: NodeJS.Timeout | null = null
   private readonly packsDir: string
   private readonly tmpDir: string
@@ -158,16 +164,28 @@ export class PackService extends EventEmitter {
     }
   }
 
-  requestGameBanana(info: { modId: number; fileId: number; modName: string; fileName: string; size: number }): JobView {
+  requestGameBanana(info: {
+    modId: number
+    fileId: number
+    modName: string
+    fileName: string
+    size: number
+    pageUrl?: string
+    images?: string[]
+    description?: string
+  }): JobView {
     const source: PackSourceInfo = {
       kind: 'gamebanana',
       name: info.modName,
       modId: info.modId,
       fileId: info.fileId,
-      pageUrl: `https://gamebanana.com/mods/${info.modId}`,
+      pageUrl: info.pageUrl ?? `https://gamebanana.com/mods/${info.modId}`,
     }
-    return this.startJob(`gb:${info.fileId}`, info.modName, source, `gb${info.fileId}`, async (workDir, job) => {
-      return this.downloadAndExtract(job, workDir, this.gamebanana.downloadUrl(info.fileId), GAMEBANANA_HOSTS, info.size)
+    const extras: Partial<JobView> = { pageUrl: source.pageUrl as string }
+    if (info.images?.length) extras.images = info.images.slice(0, 4)
+    if (info.description) extras.description = info.description.slice(0, 600)
+    return this.startJob(`gb:${info.fileId}`, info.modName, source, `gb${info.fileId}`, extras, async (workDir, job, signal) => {
+      return this.downloadAndExtract(job, workDir, this.gamebanana.downloadUrl(info.fileId), GAMEBANANA_HOSTS, info.size, signal)
     })
   }
 
@@ -176,8 +194,8 @@ export class PackService extends EventEmitter {
     const label = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() ?? parsed.hostname)
     const source: PackSourceInfo = { kind: 'url', name: label, url, uploader, public: true }
     const hash = shortHash(url)
-    return this.startJob(`url:${hash}`, label, source, `url${hash}`, async (workDir, job) => {
-      return this.downloadAndExtract(job, workDir, url, this.config.importHosts, 0)
+    return this.startJob(`url:${hash}`, label, source, `url${hash}`, {}, async (workDir, job, signal) => {
+      return this.downloadAndExtract(job, workDir, url, this.config.importHosts, 0, signal)
     })
   }
 
@@ -188,17 +206,32 @@ export class PackService extends EventEmitter {
       uploader: info.uploader,
       public: info.public,
     }
-    return this.startJob(`up:${info.uploadId}`, info.label, source, `up${info.uploadId}`, async (workDir, job) => {
+    return this.startJob(`up:${info.uploadId}`, info.label, source, `up${info.uploadId}`, {}, async (workDir, job, signal) => {
       const root = path.join(workDir, 'upload')
       await fs.rename(info.dir, root)
       const archives = await findArchives(root)
       for (const [index, archive] of archives.entries()) {
         this.update(job, { stage: 'extracting', progress: index / Math.max(1, archives.length) })
-        await this.extract(archive, `${archive}_extracted`)
+        await this.extract(archive, `${archive}_extracted`, signal)
         await fs.rm(archive, { force: true })
       }
       return root
     })
+  }
+
+  /**
+   * Stops a job that is waiting or running and forgets it. A job that is ready is not changed.
+   * Returns true when the job was stopped or removed.
+   */
+  cancel(key: string): boolean {
+    const job = this.jobs.get(key)
+    if (!job || job.stage === 'ready') return false
+    this.jobs.delete(key)
+    const index = this.pendingJobs.findIndex((entry) => entry.job === job)
+    if (index >= 0) this.pendingJobs.splice(index, 1)
+    this.aborts.get(job)?.abort()
+    this.log.info({ job: key }, 'pack job cancelled')
+    return true
   }
 
   private toView(job: JobRecord): JobView {
@@ -210,6 +243,9 @@ export class PackService extends EventEmitter {
       packIds: job.packIds,
     }
     if (job.message) view.message = job.message
+    if (job.pageUrl) view.pageUrl = job.pageUrl
+    if (job.images?.length) view.images = job.images
+    if (job.description) view.description = job.description
     return view
   }
 
@@ -218,6 +254,8 @@ export class PackService extends EventEmitter {
   private update(job: JobRecord, patch: Partial<JobRecord>): void {
     const stageChanged = patch.stage !== undefined && patch.stage !== job.stage
     Object.assign(job, patch, { updatedAt: Date.now() })
+    // A cancelled job can still run for a moment. It must not send updates for a new job with the same key.
+    if (this.jobs.get(job.key) !== job) return
     const now = Date.now()
     if (stageChanged || now - (this.lastEmit.get(job.key) ?? 0) > 400) {
       this.lastEmit.set(job.key, now)
@@ -225,7 +263,14 @@ export class PackService extends EventEmitter {
     }
   }
 
-  private startJob(key: string, label: string, source: PackSourceInfo, prefix: string, fetcher: Fetcher): JobView {
+  private startJob(
+    key: string,
+    label: string,
+    source: PackSourceInfo,
+    prefix: string,
+    extras: Partial<JobView>,
+    fetcher: Fetcher,
+  ): JobView {
     const existing = this.jobs.get(key)
     if (existing && existing.stage !== 'error') {
       if (existing.stage !== 'ready' || existing.packIds.every((id) => this.manifests.has(id))) {
@@ -233,10 +278,21 @@ export class PackService extends EventEmitter {
         return this.toView(existing)
       }
     }
-    const job: JobRecord = { key, label, stage: 'queued', progress: 0, packIds: [], source, updatedAt: Date.now() }
+    const job: JobRecord = {
+      ...extras,
+      key,
+      label,
+      stage: 'queued',
+      progress: 0,
+      packIds: [],
+      source,
+      updatedAt: Date.now(),
+    }
+    const controller = new AbortController()
+    this.aborts.set(job, controller)
     this.jobs.set(key, job)
     this.emit('job', this.toView(job))
-    this.pendingJobs.push(() => this.runJob(job, prefix, fetcher))
+    this.pendingJobs.push({ job, run: () => this.runJob(job, prefix, fetcher, controller.signal) })
     void this.pumpJobs()
     return this.toView(job)
   }
@@ -246,7 +302,8 @@ export class PackService extends EventEmitter {
       const next = this.pendingJobs.shift()
       if (!next) break
       this.runningJobs += 1
-      void next()
+      void next
+        .run()
         .catch((error: unknown) => this.log.error({ err: error }, 'pack job crashed'))
         .finally(() => {
           this.runningJobs -= 1
@@ -264,11 +321,12 @@ export class PackService extends EventEmitter {
     }
   }
 
-  private async extract(archive: string, destination: string): Promise<void> {
+  private async extract(archive: string, destination: string, signal?: AbortSignal): Promise<void> {
     await ensureDir(destination)
     try {
-      await this.media.extractArchive(archive, destination)
+      await this.media.extractArchive(archive, destination, signal)
     } catch (error) {
+      signal?.throwIfAborted()
       await makeTreeWritable(destination)
       const files = await walkFiles(destination)
       if (files.length === 0) {
@@ -286,6 +344,7 @@ export class PackService extends EventEmitter {
     url: string,
     hosts: string[],
     expectedSize: number,
+    signal: AbortSignal,
   ): Promise<string> {
     this.update(job, { stage: 'downloading', progress: 0 })
     const archive = path.join(workDir, 'download.bin')
@@ -294,26 +353,31 @@ export class PackService extends EventEmitter {
       maxBytes: this.config.downloadMaxBytes,
       userAgent: this.config.userAgent,
       expectedSize,
+      signal,
       onProgress: (received, total) => this.update(job, { progress: total > 0 ? received / total : 0 }),
     })
+    signal.throwIfAborted()
     this.update(job, { stage: 'extracting', progress: 0 })
     const root = path.join(workDir, 'extracted')
-    await this.extract(archive, root)
+    await this.extract(archive, root, signal)
     await fs.rm(archive, { force: true })
     return root
   }
 
-  private async runJob(job: JobRecord, prefix: string, fetcher: Fetcher): Promise<void> {
+  private async runJob(job: JobRecord, prefix: string, fetcher: Fetcher, signal: AbortSignal): Promise<void> {
     const workDir = path.join(this.tmpDir, `job-${randomId(6)}`)
+    const created: string[] = []
     try {
       await ensureDir(workDir)
+      signal.throwIfAborted()
       this.update(job, { stage: 'resolving', progress: 0 })
-      const root = await fetcher(workDir, job)
+      const root = await fetcher(workDir, job, signal)
+      signal.throwIfAborted()
       if ((await dirSize(root)) > this.config.downloadMaxBytes * 4) throw new Error('The extracted pack is too large')
       this.update(job, { stage: 'processing', progress: 0 })
       let dirs = await findPackDirs(root)
       if (dirs.length === 0) {
-        for (const archive of await findArchives(root)) await this.extract(archive, `${archive}_extracted`)
+        for (const archive of await findArchives(root)) await this.extract(archive, `${archive}_extracted`, signal)
         dirs = await findPackDirs(root)
       }
       if (dirs.length === 0) {
@@ -322,6 +386,7 @@ export class PackService extends EventEmitter {
       const ids: string[] = []
       let firstError: unknown = null
       for (const [index, dir] of dirs.entries()) {
+        signal.throwIfAborted()
         const packId = `${prefix}-${index + 1}`
         if (this.manifests.has(packId)) {
           ids.push(packId)
@@ -339,23 +404,40 @@ export class PackService extends EventEmitter {
             media: this.media,
             onProgress: (fraction) => this.update(job, { progress: (index + fraction) / dirs.length }),
           })
+          signal.throwIfAborted()
           this.manifests.set(packId, manifest)
+          created.push(packId)
           this.touch(packId)
           this.videoQueue.push(packId)
           ids.push(packId)
           if (raw.warnings.length > 0) this.log.info({ packId, warnings: raw.warnings.slice(0, 10) }, 'pack warnings')
         } catch (error) {
+          await this.removeTemp(this.packDir(packId))
+          if (signal.aborted) throw error
           firstError ??= error
           this.log.warn({ err: error, packId }, 'pack processing failed')
-          await this.removeTemp(this.packDir(packId))
         }
       }
+      signal.throwIfAborted()
       if (ids.length === 0) throw firstError ?? new Error('No pack could be processed')
       this.update(job, { stage: 'ready', progress: 1, packIds: ids })
       void this.pumpVideo()
     } catch (error) {
-      this.log.warn({ err: error, job: job.key }, 'pack job failed')
-      this.update(job, { stage: 'error', message: publicMessage(error) })
+      if (signal.aborted) {
+        // Nobody wants the packs of a cancelled job, so do not keep them or convert their video.
+        for (const packId of created) {
+          if (this.isInUse(packId)) continue
+          this.manifests.delete(packId)
+          this.lastUsed.delete(packId)
+          const queued = this.videoQueue.indexOf(packId)
+          if (queued >= 0) this.videoQueue.splice(queued, 1)
+          await this.removeTemp(this.packDir(packId))
+        }
+        this.log.info({ job: job.key }, 'pack job stopped')
+      } else {
+        this.log.warn({ err: error, job: job.key }, 'pack job failed')
+        this.update(job, { stage: 'error', message: publicMessage(error) })
+      }
     } finally {
       await this.removeTemp(workDir)
       this.scheduleSave()
