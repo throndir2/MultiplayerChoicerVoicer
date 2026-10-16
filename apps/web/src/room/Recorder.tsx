@@ -80,7 +80,7 @@ interface Props {
   mic: Microphone
   /** Volume (0 to 1) of the original line while the player records. 0 does not play it. */
   guideVolume: number
-  /** Show the line picture and play the scene. Off shows a default picture, so the scene stays a surprise. */
+  /** Play the video of the scene. Off shows only the still picture of the line, so the video stays a surprise. */
   showScene: boolean
   /** "Next" needs a take of this line (when the player cannot come back). */
   requireTake: boolean
@@ -148,7 +148,7 @@ export function Recorder({
   const lineSeconds = line.promptDuration > 0 ? line.promptDuration : FALLBACK_SECONDS
   const videoUrl = manifest.videoUrl
   const sceneSrc = showScene && videoUrl ? (assets.objectUrl(videoUrl) ?? videoUrl) : null
-  const imageSrc = showScene ? (assets.objectUrl(line.imageUrl) ?? line.imageUrl) : null
+  const imageSrc = line.imageUrl ? (assets.objectUrl(line.imageUrl) ?? line.imageUrl) : null
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -631,26 +631,26 @@ export function Recorder({
       </div>
 
       <div className="stage stage--recorder">
-        {showScene ? (
-          <>
-            {imageSrc && <img className={sceneActive ? 'is-hidden' : ''} src={imageSrc} alt="" />}
-            {sceneSrc && (
-              <video
-                ref={videoRef}
-                className={sceneActive ? '' : 'is-hidden'}
-                src={sceneSrc}
-                muted
-                playsInline
-                preload="metadata"
-                onLoadedMetadata={parkVideo}
-              />
-            )}
-          </>
+        {imageSrc ? (
+          <img className={sceneActive ? 'is-hidden' : ''} src={imageSrc} alt="" />
         ) : (
-          <div className="stage__placeholder" style={{ '--player': color } as CSSProperties}>
+          <div
+            className={`stage__placeholder${sceneActive ? ' is-hidden' : ''}`}
+            style={{ '--player': color } as CSSProperties}
+          >
             <img src="/favicon.svg" alt="" />
-            <span>The scene is a surprise. You see it when you watch the dubs.</span>
           </div>
+        )}
+        {sceneSrc && (
+          <video
+            ref={videoRef}
+            className={sceneActive ? '' : 'is-hidden'}
+            src={sceneSrc}
+            muted
+            playsInline
+            preload="metadata"
+            onLoadedMetadata={parkVideo}
+          />
         )}
         <div className="stage__caption">
           <span className="stage__speaker">{characters}</span>

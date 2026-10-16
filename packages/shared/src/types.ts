@@ -219,7 +219,7 @@ export interface ModDetails {
 export interface RoomSettings {
   mode: GameMode
   fillMissingWithOriginal: boolean
-  /** Show the line pictures and the video while the players record. Off keeps the scene a surprise until playback. */
+  /** Play the video while the players record. Off shows only the still picture of each line, so the video stays a surprise until playback. */
   showSceneWhileRecording: boolean
   /** Let the players go back to earlier lines and record them again. */
   allowGoingBack: boolean

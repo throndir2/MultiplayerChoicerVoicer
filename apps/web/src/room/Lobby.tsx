@@ -446,7 +446,7 @@ export function Lobby() {
               disabled={!isHost}
               onChange={(event) => setSetting({ showSceneWhileRecording: event.target.checked })}
             />
-            <span>Show the scene (pictures and video) while recording. Off keeps it a surprise until you watch.</span>
+            <span>Play the video while recording. Off shows only the still picture of each line, so the video stays a surprise until you watch.</span>
           </label>
           <label className="toggle">
             <input
