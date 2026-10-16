@@ -47,6 +47,8 @@ export async function decodeBlob(blob: Blob): Promise<AudioBuffer> {
 export class SampleTrack {
   data: Float32Array
   length = 0
+  /** Loudest sample so far. */
+  peak = 0
 
   constructor(
     readonly sampleRate: number,
@@ -63,6 +65,10 @@ export class SampleTrack {
     }
     this.data.set(chunk, this.length)
     this.length += chunk.length
+    for (const value of chunk) {
+      const level = Math.abs(value)
+      if (level > this.peak) this.peak = level
+    }
   }
 }
 
@@ -78,6 +84,8 @@ export interface WaveLayer {
   color: string
   /** Colour of the loudness (RMS) core. */
   coreColor: string
+  /** Lowest level that fills the full height. A louder layer is scaled to its own loudest sample. */
+  reference?: number
 }
 
 interface Columns {
@@ -173,7 +181,7 @@ export function drawWaveform(
   let legendX = 8 * ratio
   for (const layer of layers) {
     const columns = columnsFor(layer, width, scale)
-    const gain = 0.95 / Math.max(columns.peak, 0.08)
+    const gain = 0.95 / Math.max(columns.peak, layer.reference ?? 0, 0.08)
     ctx.fillStyle = layer.color
     for (let x = 0; x < width; x += 1) {
       const high = columns.max[x] ?? 0
@@ -208,7 +216,8 @@ const CAPTURE_PROCESSOR = `
 class McvCapture extends AudioWorkletProcessor {
   constructor() {
     super()
-    this.buffer = new Float32Array(1024)
+    // Small chunks (about 5 ms) let the live waveform grow smoothly at each display frame.
+    this.buffer = new Float32Array(256)
     this.size = 0
   }
   process(inputs) {
