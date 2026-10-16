@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import type { AppConfig } from '../config.js'
+import { TAKE_RATE, cleanTake, speechBounds, type EchoResult } from './take.js'
 
 export interface RunOptions {
   onStdoutLine?: (line: string) => void
@@ -98,6 +99,24 @@ export interface SubtitleEntry {
   start: number
   end: number
   text: string
+}
+
+export interface RecordingOptions {
+  /** Longest take in seconds (the length of the original line). 0 = no limit. */
+  maxSeconds?: number
+  /** Seconds from the start of the upload to the start of the original line (the end of the countdown). */
+  lead?: number
+  /** File of the original line. */
+  prompt?: string | null
+  /** False when the original line did not play during the recording, so it cannot be in the take. */
+  guide?: boolean
+}
+
+export interface RecordingResult {
+  duration: number
+  /** Seconds of the first word in the upload, or null when no speech was found. */
+  onset: number | null
+  echo: EchoResult | null
 }
 
 export class Media {
@@ -269,30 +288,63 @@ export class Media {
   }
 
   /**
-   * Trims silence at both ends, normalises the loudness and stores AAC, which every browser
-   * can decode. A take that is all silence is kept without the trim. When `maxSeconds` is
-   * above 0, the take is cut to that length (the length of the original line).
+   * Cleans a take (see `cleanTake`): removes the echo of the original line, cuts the countdown, places the
+   * first word where the original line has its first word, normalises the loudness and stores AAC, which
+   * every browser can decode.
    */
-  async processRecording(input: string, output: string, maxSeconds = 0): Promise<number> {
-    const trim =
-      'silenceremove=start_periods=1:start_threshold=-42dB:start_silence=0.06,' +
-      'areverse,silenceremove=start_periods=1:start_threshold=-42dB:start_silence=0.2,areverse,'
-    const cap = maxSeconds > 0 ? `asetpts=N/SR/TB,atrim=end=${maxSeconds.toFixed(3)},` : ''
-    const normalise = 'loudnorm=I=-16:TP=-1.5:LRA=11'
-    const encode = ['-ar', '48000', '-ac', '1', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart']
-    await runCommand(
-      this.config.ffmpeg,
-      this.ffmpegArgs(['-i', input, '-vn', '-af', trim + cap + normalise, ...encode, output]),
-      { timeoutMs: 120_000 },
-    )
-    let duration = await this.duration(output)
-    if (duration < 0.15) {
-      await runCommand(this.config.ffmpeg, this.ffmpegArgs(['-i', input, '-vn', '-af', cap + normalise, ...encode, output]), {
-        timeoutMs: 120_000,
-      })
-      duration = await this.duration(output)
+  async processRecording(input: string, output: string, options: RecordingOptions = {}): Promise<RecordingResult> {
+    const maxSeconds = options.maxSeconds ?? 0
+    const raw = await this.decodePcm(input, TAKE_RATE)
+    let prompt: Float32Array | null = null
+    if (options.prompt) {
+      try {
+        prompt = await this.decodePcm(options.prompt, TAKE_RATE)
+      } catch {
+        prompt = null
+      }
     }
-    return maxSeconds > 0 ? Math.min(duration, maxSeconds) : duration
+    const result = cleanTake(raw, {
+      lead: options.lead ?? 0,
+      reference: options.guide === false ? null : prompt,
+      promptOnset: prompt ? (speechBounds(prompt, TAKE_RATE)?.onset ?? 0) : 0,
+      maxSeconds,
+    })
+    if (result.samples.length < TAKE_RATE * 0.05) return { duration: 0, onset: result.onset, echo: result.echo }
+    const pcm = `${output}.f32`
+    await fs.writeFile(pcm, Buffer.from(result.samples.buffer, result.samples.byteOffset, result.samples.byteLength))
+    try {
+      await runCommand(
+        this.config.ffmpeg,
+        this.ffmpegArgs([
+          '-f',
+          'f32le',
+          '-ar',
+          String(TAKE_RATE),
+          '-ac',
+          '1',
+          '-i',
+          pcm,
+          '-af',
+          'loudnorm=I=-16:TP=-1.5:LRA=11',
+          '-ar',
+          '48000',
+          '-ac',
+          '1',
+          '-c:a',
+          'aac',
+          '-b:a',
+          '96k',
+          '-movflags',
+          '+faststart',
+          output,
+        ]),
+        { timeoutMs: 120_000 },
+      )
+    } finally {
+      await fs.rm(pcm, { force: true })
+    }
+    const duration = await this.duration(output)
+    return { duration: maxSeconds > 0 ? Math.min(duration, maxSeconds) : duration, onset: result.onset, echo: result.echo }
   }
 
   /** Decodes the first audio stream to mono 32-bit float samples at `sampleRate`. */

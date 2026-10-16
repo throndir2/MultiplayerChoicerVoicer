@@ -48,7 +48,9 @@ export function useMicrophone(): Microphone {
     }
     try {
       const constraints: MediaTrackConstraints = {
-        echoCancellation: clean,
+        // Echo cancellation is always on. "all" (Chrome 141+) also removes other sound that the computer plays,
+        // for example a "listen to this microphone" loopback of a voice changer. Older browsers read it as `true`.
+        echoCancellation: 'all' as unknown as boolean,
         noiseSuppression: clean,
         autoGainControl: clean,
         channelCount: 1,

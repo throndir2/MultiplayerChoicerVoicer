@@ -6,7 +6,16 @@ import type { JobView, PackManifest, PackSourceInfo, PackSummary } from '@mcv/sh
 import type { AppConfig } from '../config.js'
 import { GAMEBANANA_HOSTS, type GameBananaClient } from '../catalog/gamebanana.js'
 import { downloadToFile } from '../util/download.js'
-import { dirSize, ensureDir, exists, readJson, removeDir, walkFiles, writeJsonAtomic } from '../util/fsx.js'
+import {
+  dirSize,
+  ensureDir,
+  exists,
+  makeTreeWritable,
+  readJson,
+  removeDir,
+  walkFiles,
+  writeJsonAtomic,
+} from '../util/fsx.js'
 import { randomId, shortHash } from '../util/ids.js'
 import type { Media } from '../util/media.js'
 import { findArchives, findPackDirs, readPack } from './discover.js'
@@ -89,7 +98,7 @@ export class PackService extends EventEmitter {
 
   async load(): Promise<void> {
     await ensureDir(this.packsDir)
-    await removeDir(this.tmpDir)
+    await this.removeTemp(this.tmpDir)
     await ensureDir(this.tmpDir)
     const index = await readJson<PackIndexFile>(this.indexFile)
     for (const [id, at] of Object.entries(index?.lastUsed ?? {})) this.lastUsed.set(id, at)
@@ -293,10 +302,22 @@ export class PackService extends EventEmitter {
       const next = this.pendingJobs.shift()
       if (!next) break
       this.runningJobs += 1
-      void next.run().finally(() => {
-        this.runningJobs -= 1
-        void this.pumpJobs()
-      })
+      void next
+        .run()
+        .catch((error: unknown) => this.log.error({ err: error }, 'pack job crashed'))
+        .finally(() => {
+          this.runningJobs -= 1
+          void this.pumpJobs()
+        })
+    }
+  }
+
+  /** Removes a temporary folder. A failure is only a warning: it must never stop the server. */
+  private async removeTemp(dir: string): Promise<void> {
+    try {
+      await removeDir(dir)
+    } catch (error) {
+      this.log.warn({ err: error, dir }, 'temporary folder cleanup failed')
     }
   }
 
@@ -306,12 +327,15 @@ export class PackService extends EventEmitter {
       await this.media.extractArchive(archive, destination, signal)
     } catch (error) {
       signal?.throwIfAborted()
+      await makeTreeWritable(destination)
       const files = await walkFiles(destination)
       if (files.length === 0) {
         throw new Error('The file is not a zip, 7z or rar archive, or the archive is damaged', { cause: error })
       }
       this.log.warn({ err: error }, 'archive extracted with warnings')
     }
+    // Archives can contain read-only folders. They block the moves and the cleanup later.
+    await makeTreeWritable(destination)
   }
 
   private async downloadAndExtract(
@@ -343,8 +367,8 @@ export class PackService extends EventEmitter {
   private async runJob(job: JobRecord, prefix: string, fetcher: Fetcher, signal: AbortSignal): Promise<void> {
     const workDir = path.join(this.tmpDir, `job-${randomId(6)}`)
     const created: string[] = []
-    await ensureDir(workDir)
     try {
+      await ensureDir(workDir)
       signal.throwIfAborted()
       this.update(job, { stage: 'resolving', progress: 0 })
       const root = await fetcher(workDir, job, signal)
@@ -388,7 +412,7 @@ export class PackService extends EventEmitter {
           ids.push(packId)
           if (raw.warnings.length > 0) this.log.info({ packId, warnings: raw.warnings.slice(0, 10) }, 'pack warnings')
         } catch (error) {
-          await removeDir(this.packDir(packId))
+          await this.removeTemp(this.packDir(packId))
           if (signal.aborted) throw error
           firstError ??= error
           this.log.warn({ err: error, packId }, 'pack processing failed')
@@ -407,7 +431,7 @@ export class PackService extends EventEmitter {
           this.lastUsed.delete(packId)
           const queued = this.videoQueue.indexOf(packId)
           if (queued >= 0) this.videoQueue.splice(queued, 1)
-          await removeDir(this.packDir(packId))
+          await this.removeTemp(this.packDir(packId))
         }
         this.log.info({ job: job.key }, 'pack job stopped')
       } else {
@@ -415,9 +439,9 @@ export class PackService extends EventEmitter {
         this.update(job, { stage: 'error', message: publicMessage(error) })
       }
     } finally {
-      await removeDir(workDir)
+      await this.removeTemp(workDir)
       this.scheduleSave()
-      void this.evict()
+      void this.evict().catch((error: unknown) => this.log.warn({ err: error }, 'pack cache eviction failed'))
     }
   }
 
@@ -465,6 +489,8 @@ export class PackService extends EventEmitter {
           this.emit('pack', manifest)
         }
       }
+    } catch (error) {
+      this.log.error({ err: error }, 'video queue failed')
     } finally {
       this.videoBusy = false
     }

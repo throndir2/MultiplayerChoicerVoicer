@@ -34,7 +34,7 @@ export class UploadService {
   }
 
   async load(): Promise<void> {
-    await removeDir(this.root)
+    await removeDir(this.root).catch(() => undefined)
     await ensureDir(this.root)
     this.timer = setInterval(() => void this.sweep(), 30 * 60_000)
   }
@@ -128,7 +128,7 @@ export class UploadService {
     for (const upload of this.uploads.values()) {
       if (upload.createdAt < limit) {
         this.uploads.delete(upload.id)
-        await removeDir(upload.dir)
+        await removeDir(upload.dir).catch(() => undefined)
       }
     }
   }

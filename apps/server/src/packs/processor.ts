@@ -18,7 +18,8 @@ async function moveFile(from: string, to: string): Promise<void> {
     await fs.rename(from, to)
   } catch {
     await fs.copyFile(from, to)
-    await fs.rm(from, { force: true })
+    // The source is in the job's temp folder, which is removed later anyway.
+    await fs.rm(from, { force: true }).catch(() => undefined)
   }
 }
 
