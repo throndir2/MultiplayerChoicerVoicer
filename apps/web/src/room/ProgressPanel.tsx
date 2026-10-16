@@ -1,4 +1,4 @@
-import { ClientEvents, taskCounts } from '@mcv/shared'
+import { ClientEvents, recordingOrder, taskCounts } from '@mcv/shared'
 import { PlayerChip, ProgressBar, percent } from '../components/ui'
 import { useRoom } from '../lib/room'
 
@@ -23,7 +23,7 @@ export function ProgressPanel() {
             room.round?.dubs
               .filter((dub) => !progress?.dubId || dub.id === progress.dubId)
               .flatMap((dub) =>
-                (roundManifest?.lines ?? []).filter((entry) => dub.assignments[entry.id] === player.id),
+                recordingOrder((roundManifest?.lines ?? []).filter((entry) => dub.assignments[entry.id] === player.id)),
               ) ?? []
           const position = line ? myLines.findIndex((entry) => entry.id === line.id) + 1 : 0
           return (

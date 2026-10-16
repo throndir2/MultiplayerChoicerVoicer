@@ -126,6 +126,7 @@ The host sets two more options in the lobby. They apply to the next round and ca
 
 ## 7. Recording
 
+- The line list puts all lines of one character together, so the player does not switch voices back and forth. The characters come in the order of their first line, and the lines of a character stay in pack order. A line with more than one character goes with its first character.
 - The player sees the character, the caption and the length of the original line. The picture is a default picture, or the line image when "Show the scene while recording" is on.
 - "Play original" plays the prompt. When "Show the scene while recording" is on and the video is downloaded, the player sees the real scene too.
 - When the player goes to another line (Next, Previous, the line list, or the `N` and `B` keys), the original line plays one time automatically, the same as "Play original". The first line of the round does not play by itself. "Record" stops the playback, and a playback that still loads does not start after a stop, a recording or a line change. "Play the original line when I go to a line" (in the Microphone card, default on, saved in the browser) turns this off.
