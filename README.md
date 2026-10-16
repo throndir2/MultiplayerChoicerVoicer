@@ -2,6 +2,8 @@
 
 Choicer Voicer Party is a website where a group of friends dubs [The Choicer Voicer](https://gamebanana.com/games/20674) packs together. One player creates a room and sends the link. The players record their lines in the browser, then watch the result together with subtitles, and vote.
 
+**Live site: <https://choicervoicer.throndir.com>**
+
 This is an unofficial fan project. It is not affiliated with the creators of The Choicer Voicer.
 
 ## Features
@@ -69,6 +71,6 @@ packages/shared   Types, Zod schemas, socket event names, cue and caption logic
 apps/server       Fastify + Socket.IO server, GameBanana catalog, pack processing, rooms
 apps/web          React + Vite client
 deploy/           Docker Compose file for Nahida
-scripts/          Nahida deploy script and the sample pack generator
+scripts/          Nahida deploy, Nginx Proxy Manager setup and the sample pack generator
 docs/             Design plan and deployment guide
 ```

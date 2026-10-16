@@ -251,7 +251,8 @@ docker images $imageName --format '{{.CreatedAt}}|{{.Tag}}' \
 
 Write-Host ''
 Write-Host "Released ${imageName}:$imageTag" -ForegroundColor Green
-Write-Host "  upstream     http://${BindAddress}:${Port}  (point Nginx Proxy Manager here, with Websockets Support on)"
+Write-Host "  public       https://choicervoicer.throndir.com"
+Write-Host "  upstream     http://${BindAddress}:${Port}  (the Nginx Proxy Manager host comes from scripts/configure-npm.ps1)"
 Write-Host "  remote root  $RemoteRoot"
 Write-Host "  rollback     pwsh -File scripts/deploy-nahida.ps1 -Rollback <previous-tag>"
 exit 0

@@ -136,7 +136,8 @@ flowchart LR
 - `Dockerfile`: multi-stage build, `node:22-alpine` with `ffmpeg` and `libarchive-tools`, non-root user, `/data` volume.
 - `deploy/compose.yaml`: one service, port `3090` on `192.168.50.9`, health check on `/healthz`, memory and CPU limits.
 - `scripts/deploy-nahida.ps1`: builds the image locally, copies it with `docker save` and `scp`, loads it on Nahida, writes the `.env` file and starts Compose. This is the same flow as Fold Down Stories. No GitHub Actions minutes are used.
-- In Nginx Proxy Manager, add a proxy host for your domain to `http://192.168.50.9:3090` with **Websockets Support** on. Uploads use 8 MB chunks, so the default body limit of the proxy is not a problem if it is 10 MB or more.
+- `scripts/configure-npm.ps1`: creates the Nginx Proxy Manager proxy host for `choicervoicer.throndir.com` to `http://192.168.50.9:3090`, with WebSocket upgrades, the `*.throndir.com` certificate and forced HTTPS.
+- The live site is `https://choicervoicer.throndir.com` (Cloudflare DNS → router → Nginx Proxy Manager → container).
 
 ## 12. Work plan
 

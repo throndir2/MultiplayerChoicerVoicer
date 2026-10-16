@@ -1,16 +1,23 @@
 # Deployment on Nahida
 
+The live site is **https://choicervoicer.throndir.com**.
+
 The service is one Docker container. It uses the same release flow as Fold Down Stories: build on the workstation, copy the image over SSH, and start it with Docker Compose. No container registry and no GitHub Actions minutes are used.
 
 ## Topology
 
 | Item | Value |
 | --- | --- |
+| Public address | `https://choicervoicer.throndir.com` |
+| DNS | Cloudflare, proxied record (same as `stories.throndir.com`) |
 | Host | Nahida, `192.168.50.9`, SSH port `9222`, user `throndir` |
 | Remote folder | `/Volume2/apps/multiplayer-choicer-voicer` |
-| Upstream | `http://192.168.50.9:3090` |
-| Reverse proxy | Nginx Proxy Manager (TLS) |
+| Upstream | `http://192.168.50.9:3090` (LAN address; do not forward this port in the router) |
+| Reverse proxy | Nginx Proxy Manager on Nahida, proxy host 10, wildcard certificate `*.throndir.com` (certificate 3) |
 | Data | Docker volume `multiplayer-choicer-voicer_mcv-data` mounted at `/data` |
+| Limits | 4 CPUs, 3 GB of memory |
+
+The request path is: browser → Cloudflare → router (443 → 8443) → Nginx Proxy Manager → `192.168.50.9:3090`.
 
 The data volume contains:
 
@@ -31,14 +38,27 @@ The data volume contains:
 
    The script runs the type check and the tests, builds the image, copies it to Nahida, writes the `.env` file, starts Compose and checks `/healthz`.
 
-3. In Nginx Proxy Manager, add a proxy host:
-   - **Domain name**: your domain, for example `voicer.example.com`.
-   - **Forward hostname / IP**: `192.168.50.9`, **port** `3090`, scheme `http`.
-   - Turn on **Websockets Support** (the rooms use Socket.IO).
-   - On the SSL tab, request a certificate and turn on **Force SSL**. The microphone works only on HTTPS.
-   - Optional, on the Advanced tab: `client_max_body_size 32m;` if your proxy has a body limit below 32 MB. Uploads use 8 MB parts and recordings are smaller than 30 MB.
+3. Create the Nginx Proxy Manager host:
 
-4. Open the domain. The first start reads the GameBanana list in the background. This takes about two minutes.
+   ```powershell
+   pwsh -File scripts/configure-npm.ps1
+   ```
+
+   The script asks for the Nginx Proxy Manager login. You can also set `NPM_IDENTITY` and `NPM_SECRET` in the PowerShell session first. The script does not save or print the login. It:
+   - uses a certificate that already covers the domain (the `*.throndir.com` wildcard), or requests a Let's Encrypt certificate;
+   - forwards `choicervoicer.throndir.com` to `http://192.168.50.9:3090`;
+   - turns on WebSocket upgrades (the rooms use Socket.IO), HTTP/2, forced HTTPS and HSTS;
+   - sets `client_max_body_size 64m` and 300-second proxy timeouts.
+
+   For a different domain, use `-Domain <name>`. The microphone works only on HTTPS.
+
+4. Open the domain. The first start reads the GameBanana list in the background. This takes about two and a half minutes.
+
+## Cloudflare
+
+- Cloudflare caches the pack images, the MP3 files and the MP4 files, because their names never change. Recordings (`.m4a`) and the API are not cached.
+- Uploads go in 8 MB parts, so they stay below the 100 MB request limit of the free Cloudflare plan.
+- WebSockets work through Cloudflare without extra settings.
 
 ## Later releases
 
@@ -79,4 +99,4 @@ After you change the file, run the deploy script again, or run `docker compose -
 
 ## Resources
 
-The container is limited to 2 CPUs and 1.5 GB of memory. Video conversion is the heaviest work. The server converts one video at a time, while the players record.
+The container is limited to 4 CPUs and 3 GB of memory. Video conversion is the heaviest work. The server converts one video at a time, while the players record. When it is idle, the container uses about 100 MB of memory.
