@@ -2,9 +2,9 @@
 
 These instructions apply to all agent work in this repository.
 
-## Always merge finished work into `main`
+## Always merge finished work into `main` and deploy it
 
-Do not leave finished work on a branch or in an open pull request. When a task is complete, merge it into `main`.
+Do not leave finished work on a branch or in an open pull request. When a task is complete, merge it into `main`. Then deploy `main` to Nahida (see "Deploy every finished change" below).
 
 1. Run the local checks from the repository root:
 
@@ -29,8 +29,47 @@ Do not leave finished work on a branch or in an open pull request. When a task i
 7. If the pull request has a merge conflict, merge `origin/main` into the branch, resolve the conflict, run the checks again, push, and merge.
 8. After a merge, a session branch can continue. Before new work, run `git fetch origin` and `git merge origin/main` on the branch.
 9. If a new pull request cannot be opened for the branch (for example, the session's pull request is already merged), fast-forward `main` directly. First merge `origin/main` into the branch and run the checks. Then run `git push origin HEAD:main`. Never force-push `main`.
+10. Deploy the new `main` to Nahida.
 
 Stop before the merge only when the user asks for a draft, a review, or a hold.
+
+## Deploy every finished change
+
+After each merge into `main`, release `main` on Nahida. Do not ask for approval first.
+
+1. Update the session branch to the merged `main`:
+
+   ```powershell
+   git fetch origin
+   git merge --ff-only origin/main
+   ```
+
+   The script builds the image from the files in the worktree. Thus the worktree must contain exactly `origin/main`. `git status --short` must show nothing, and `git rev-parse HEAD` must equal `git rev-parse origin/main`.
+
+2. Run the deploy script from the repository root:
+
+   ```powershell
+   pwsh -File scripts/deploy-nahida.ps1
+   ```
+
+   The script runs the type check and the tests, builds the image, copies it to Nahida, starts it and checks `/healthz`. It can take some minutes, so give the command a long wait time.
+
+3. Check the public site. This command must show `200`:
+
+   ```powershell
+   curl.exe -s -o NUL -w "%{http_code}" https://choicervoicer.throndir.com/healthz
+   ```
+
+4. Run `git fetch origin` again. If `origin/main` moved while you deployed, another session merged work. Do steps 1 to 3 again, so that the newest `main` is live.
+5. Tell the user the released image tag. The script prints it on the `Released` line.
+
+If the deploy fails, find and fix the cause, merge the fix into `main`, and deploy again. Do not retry without a fix. If the live site is broken and you cannot fix it quickly, go back to the previous image with `-Rollback <tag>`. If the tag is wrong, the script lists the tags that are on Nahida.
+
+Exceptions:
+
+- Do not deploy when the merge changes only files that are not in the image: `docs/`, `.github/` and Markdown files in the repository root. Tell the user that no deploy was necessary.
+- Do not deploy when the user asks for a draft, a review, a hold, or no deploy.
+- If Docker Desktop does not run or SSH to Nahida fails, report the deploy as blocked. Never report a deploy that did not complete as done.
 
 ## No remote CI
 
@@ -40,7 +79,7 @@ Stop before the merge only when the user asks for a draft, a review, or a hold.
 ## Deployment
 
 - The live site is `https://choicervoicer.throndir.com`. It runs on Nahida (`192.168.50.9:3090`) behind Cloudflare and Nginx Proxy Manager.
-- To release `main`, run `pwsh -File scripts/deploy-nahida.ps1`. To go back to an earlier image, add `-Rollback <tag>`.
+- To release `main`, run `pwsh -File scripts/deploy-nahida.ps1`. Do this after every merge (see "Deploy every finished change"). To go back to an earlier image, add `-Rollback <tag>`.
 - `scripts/configure-npm.ps1` creates or updates the Nginx Proxy Manager host. It reads the login from `NPM_IDENTITY` and `NPM_SECRET` or from a prompt. Never write the login to a file, a commit or a log.
 - See `docs/deployment.md` for the details.
 
