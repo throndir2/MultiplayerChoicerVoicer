@@ -29,6 +29,12 @@ import { useRoom } from '../lib/room'
 /** Recording length for a line without original audio. */
 const FALLBACK_SECONDS = 6
 
+/**
+ * Level that fills the waveform height while the player records: the loudest sample of the last take. A fixed
+ * level keeps the live waveform still. It grows in steps only when the new take is louder.
+ */
+let liveLevel = 0.5
+
 interface Wave {
   samples: Float32Array
   sampleRate: number
@@ -155,7 +161,8 @@ export function Recorder({
     if (!canvas) return
     const track = modeRef.current !== 'idle' ? live.current : null
     const layers: WaveLayer[] = []
-    let end = 1
+    // The time line is the length of the line, so it does not move when a take appears or disappears.
+    let end = Math.max(1, lineSeconds)
     const original = prompt.current
     if (original) {
       layers.push({
@@ -169,6 +176,7 @@ export function Recorder({
       end = Math.max(end, original.duration)
     }
     if (track) {
+      if (track.peak > liveLevel) liveLevel = track.peak * 1.25
       // The time line is the same as for the saved take: the part before the line starts is before 0 s.
       layers.push({
         label: 'Recording…',
@@ -178,8 +186,8 @@ export function Recorder({
         offset: -liveLead.current,
         color: withAlpha(color, 0.5),
         coreColor: withAlpha(color, 0.9),
+        reference: liveLevel,
       })
-      if (!original) end = Math.max(end, lineSeconds)
     } else if (take.current) {
       layers.push({
         label: 'Your take',
@@ -189,7 +197,6 @@ export function Recorder({
         color: withAlpha(color, 0.5),
         coreColor: withAlpha(color, 0.9),
       })
-      end = Math.max(end, take.current.offset + take.current.duration)
     }
     drawWaveform(canvas, layers, end + 0.2, playhead.current)
   }, [color, lineSeconds])
@@ -438,6 +445,8 @@ export function Recorder({
     }
     recorder.onstop = () => {
       timing.mic = micReport(stream, track)
+      // The next recording starts at the level of this take, so its waveform does not change size.
+      if (track.peak > 0.05) liveLevel = track.peak
       cleanupRecording()
       if (cancelled.current) return
       void finish(new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' }), timing)
