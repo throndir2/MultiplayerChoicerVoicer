@@ -110,6 +110,8 @@ export interface RecordingOptions {
   prompt?: string | null
   /** False when the original line did not play during the recording, so it cannot be in the take. */
   guide?: boolean
+  /** Subtract the echo of the original line (`prompt`) from the take. Off by default: it damaged real takes. */
+  echo?: boolean
 }
 
 export interface RecordingResult {
@@ -288,9 +290,9 @@ export class Media {
   }
 
   /**
-   * Cleans a take (see `cleanTake`): removes the echo of the original line, cuts the countdown, places the
-   * first word where the original line has its first word, normalises the loudness and stores AAC, which
-   * every browser can decode.
+   * Cleans a take (see `cleanTake`): removes the echo of the original line (only with `echo: true`), cuts the
+   * countdown, places the first word where the original line has its first word, normalises the loudness and
+   * stores AAC, which every browser can decode.
    */
   async processRecording(input: string, output: string, options: RecordingOptions = {}): Promise<RecordingResult> {
     const maxSeconds = options.maxSeconds ?? 0
@@ -305,7 +307,7 @@ export class Media {
     }
     const result = cleanTake(raw, {
       lead: options.lead ?? 0,
-      reference: options.guide === false ? null : prompt,
+      reference: options.echo && options.guide !== false ? prompt : null,
       promptOnset: prompt ? (speechBounds(prompt, TAKE_RATE)?.onset ?? 0) : 0,
       maxSeconds,
     })

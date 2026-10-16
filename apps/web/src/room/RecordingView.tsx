@@ -231,6 +231,10 @@ export function RecordingView() {
                 </select>
               </label>
               <label className="toggle">
+                <input type="checkbox" checked={mic.echo} onChange={(event) => mic.setEcho(event.target.checked)} />
+                <span>Echo cancellation</span>
+              </label>
+              <label className="toggle">
                 <input type="checkbox" checked={mic.clean} onChange={(event) => mic.setClean(event.target.checked)} />
                 <span>Noise suppression and automatic volume</span>
               </label>
@@ -252,8 +256,8 @@ export function RecordingView() {
                 />
               </label>
               <p className="hint">
-                The original line plays at this volume while you record, so you can hear it and speak with it. Echo
-                cancellation removes it from your take. Headphones still give the cleanest take.
+                The original line plays at this volume while you record, so you can hear it and speak with it. Use
+                headphones, or the microphone also records the original line.
               </p>
               <label className="toggle">
                 <input
