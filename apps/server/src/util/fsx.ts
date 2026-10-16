@@ -14,7 +14,38 @@ export async function exists(target: string): Promise<boolean> {
   }
 }
 
+/**
+ * Gives the owner read, write and search permission on every folder (and read and write
+ * permission on every file) below `root`. Archives can contain read-only folders, and a
+ * read-only folder blocks the removal of the files in it. Best effort: errors are ignored.
+ */
+export async function makeTreeWritable(root: string): Promise<void> {
+  let stat
+  try {
+    stat = await fs.lstat(root)
+  } catch {
+    return
+  }
+  if (stat.isFile()) {
+    if ((stat.mode & 0o600) !== 0o600) await fs.chmod(root, stat.mode | 0o600).catch(() => undefined)
+    return
+  }
+  if (!stat.isDirectory()) return
+  if ((stat.mode & 0o700) !== 0o700) await fs.chmod(root, stat.mode | 0o700).catch(() => undefined)
+  let entries
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory() || entry.isFile()) await makeTreeWritable(path.join(root, entry.name))
+  }
+}
+
 export async function removeDir(target: string): Promise<void> {
+  // A read-only folder blocks the removal of its files, so fix the permissions first.
+  await makeTreeWritable(target)
   await fs.rm(target, { recursive: true, force: true, maxRetries: 3 })
 }
 
