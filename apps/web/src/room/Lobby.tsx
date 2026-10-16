@@ -1,6 +1,14 @@
 import { useState } from 'react'
-import { ClientEvents, formatBytes, formatSeconds, type GameMode, type JobView, type RoomSettings } from '@mcv/shared'
-import { Modal, PlayerChip, ProgressBar, percent } from '../components/ui'
+import {
+  ClientEvents,
+  formatBytes,
+  formatSeconds,
+  packVersionDate,
+  type GameMode,
+  type JobView,
+  type RoomSettings,
+} from '@mcv/shared'
+import { Modal, PlayerChip, ProgressBar, formatWhen, percent, versionDates, versionLabel } from '../components/ui'
 import { StorageButton } from '../components/StoragePanel'
 import { assets } from '../lib/assets'
 import { useAssetsVersion } from '../lib/preload'
@@ -108,6 +116,42 @@ export function JobStatus({ job, onChoose }: { job: JobView; onChoose?: (() => v
   )
 }
 
+/** The server has more than one version of the current pack: an update with fixes, or an alternate. */
+function PackVersions() {
+  const { room, isHost, command, notify } = useRoom()
+  const versions = room.packVersions
+  const index = versions.findIndex((entry) => entry.id === room.pack?.id)
+  const current = versions[index]
+  if (!current) return null
+  return (
+    <div className="pack__versions">
+      <p className="muted">
+        📚 This server has {versions.length} versions of this pack (updates or alternates). This is{' '}
+        {versionLabel(index, versions.length).toLowerCase()}: {versionDates(current)}.
+      </p>
+      {isHost && (
+        <label className="field">
+          <span>Version</span>
+          <select
+            value={current.id}
+            onChange={(event) =>
+              void command(ClientEvents.packSelect, { packId: event.target.value }).catch((error: Error) =>
+                notify(error.message),
+              )
+            }
+          >
+            {versions.map((entry, position) => (
+              <option key={entry.id} value={entry.id}>
+                {versionLabel(position, versions.length)} · {formatWhen(packVersionDate(entry))} · {entry.lineCount} lines
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
+  )
+}
+
 function PackCard({ onChoose }: { onChoose: () => void }) {
   const { room, manifest, isHost, command, notify, me } = useRoom()
   const [preview, setPreview] = useState(false)
@@ -163,6 +207,7 @@ function PackCard({ onChoose }: { onChoose: () => void }) {
               </a>
             )}
             {pack.source.kind === 'upload' && <p className="muted">Uploaded by {pack.source.uploader}</p>}
+            {room.packVersions.length > 1 && <PackVersions />}
             <div className="pack__video">
               {pack.videoStatus === 'ready' && (
                 <button type="button" className="button button--small" onClick={() => setPreview(true)}>

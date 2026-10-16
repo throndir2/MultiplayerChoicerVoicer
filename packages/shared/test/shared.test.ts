@@ -1,5 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { buildCues, cleanCaption, parseKeywords, recordingOrder, roomCodeSchema, type DubView, type PackManifest } from '../src/index.js'
+import {
+  buildCues,
+  cleanCaption,
+  packVersionKey,
+  parseKeywords,
+  recordingOrder,
+  roomCodeSchema,
+  type DubView,
+  type PackManifest,
+} from '../src/index.js'
+
+describe('packVersionKey', () => {
+  it('groups updates and alternates of one pack', () => {
+    const key = packVersionKey('My Pack', ['Ann', 'Bob'])
+    expect(packVersionKey('my pack (fixed)', ['bob', 'Ann'])).toBe(key)
+    expect(packVersionKey('My Pack v2.1', ['Ann', 'Bob'])).toBe(key)
+    expect(packVersionKey('My Pack - Alt', ['Ann', 'Bob'])).toBe(key)
+    expect(packVersionKey('Mý Páck', ['Ann', 'Bob'])).toBe(key)
+  })
+
+  it('keeps different packs apart', () => {
+    expect(packVersionKey('My Pack', ['Ann'])).not.toBe(packVersionKey('My Pack', ['Bob']))
+    expect(packVersionKey('Shrek 2', ['Ann'])).not.toBe(packVersionKey('Shrek', ['Ann']))
+    expect(packVersionKey('Fixed', [])).toBe('fixed|')
+  })
+})
 
 describe('parseKeywords', () => {
   it('splits at commas, trims and removes duplicates', () => {

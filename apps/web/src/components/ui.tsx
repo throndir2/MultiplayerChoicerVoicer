@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
-import { scoreLabel } from '@mcv/shared'
+import { scoreLabel, type PackSummary } from '@mcv/shared'
 
 export function ProgressBar({
   value,
@@ -79,6 +79,31 @@ export function PackCreatorLink({ className = 'button' }: { className?: string }
 
 export function percent(value: number): string {
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`
+}
+
+/** Date and time, so that two versions from the same day are different. */
+export function formatWhen(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+/** For example "made 3 Oct 2026, 14:05 · uploaded 5 Oct 2026, 09:12 by Ann". */
+export function versionDates(pack: PackSummary): string {
+  const parts: string[] = []
+  if (pack.builtAt) parts.push(`made ${formatWhen(pack.builtAt)}`)
+  const verb = pack.source.kind === 'upload' ? 'uploaded' : 'added'
+  parts.push(`${verb} ${formatWhen(pack.createdAt)}${pack.source.uploader ? ` by ${pack.source.uploader}` : ''}`)
+  return parts.join(' · ')
+}
+
+/** "Version 2 of 3 (newest)". The list is newest first, so the oldest version is version 1. */
+export function versionLabel(index: number, count: number): string {
+  return `Version ${count - index} of ${count}${index === 0 ? ' (newest)' : ''}`
 }
 
 /** Match score of a take or a dub (0..100). Shows nothing when the score is unknown. */

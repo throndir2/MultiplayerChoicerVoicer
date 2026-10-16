@@ -6,7 +6,7 @@ import {
   type ModDetails,
   type PackSummary,
 } from '@mcv/shared'
-import { Modal, PackCreatorLink, ProgressBar, percent } from '../components/ui'
+import { Modal, PackCreatorLink, ProgressBar, percent, versionDates, versionLabel } from '../components/ui'
 import { api } from '../lib/api'
 import { useRoom } from '../lib/room'
 import { uploadPack, type UploadItem } from '../lib/upload'
@@ -246,6 +246,32 @@ function GameBananaTab({ onDone, target }: { onDone: () => void; target: Library
   )
 }
 
+function ServerPackButton({
+  pack,
+  version,
+  onSelect,
+}: {
+  pack: PackSummary
+  version?: { index: number; count: number }
+  onSelect: (pack: PackSummary) => void
+}) {
+  return (
+    <button type="button" className="server-pack" onClick={() => onSelect(pack)}>
+      {pack.iconUrl ? <img src={pack.iconUrl} alt="" loading="lazy" /> : <span className="server-pack__blank">🎬</span>}
+      <span>
+        <strong>{pack.title}</strong>
+        <span className="muted">
+          {pack.lineCount} lines · {pack.characterCount} characters · {formatSeconds(pack.duration)}
+        </span>
+        <span className="muted server-pack__dates">
+          {version && <span className="badge">{versionLabel(version.index, version.count)}</span>}
+          {versionDates(pack)}
+        </span>
+      </span>
+    </button>
+  )
+}
+
 function ServerTab({ onDone, target }: { onDone: () => void; target: LibraryTarget }) {
   const select = useSource(target)
   const [packs, setPacks] = useState<PackSummary[] | null>(null)
@@ -256,26 +282,32 @@ function ServerTab({ onDone, target }: { onDone: () => void; target: LibraryTarg
   }, [])
   if (!packs) return <div className="spinner" />
   if (packs.length === 0) return <p className="muted">No packs are on this server yet.</p>
+  // The server sends all versions of a pack together, newest first.
+  const groups: PackSummary[][] = []
+  for (const pack of packs) {
+    const last = groups[groups.length - 1]
+    if (last && last[0]?.versionKey === pack.versionKey) last.push(pack)
+    else groups.push([pack])
+  }
+  const choose = (pack: PackSummary) => void select({ kind: 'pack', packId: pack.id }).then((ok) => ok && onDone())
   return (
     <div className="server-packs">
       <p className="hint">These packs are already prepared on the server, so they start immediately.</p>
-      {packs.map((pack) => (
-        <button
-          type="button"
-          key={pack.id}
-          className="server-pack"
-          onClick={() => void select({ kind: 'pack', packId: pack.id }).then((ok) => ok && onDone())}
-        >
-          {pack.iconUrl ? <img src={pack.iconUrl} alt="" loading="lazy" /> : <span className="server-pack__blank">🎬</span>}
-          <span>
-            <strong>{pack.title}</strong>
-            <span className="muted">
-              {pack.lineCount} lines · {pack.characterCount} characters · {formatSeconds(pack.duration)}
-              {pack.source.kind === 'upload' ? ` · uploaded by ${pack.source.uploader}` : ''}
-            </span>
-          </span>
-        </button>
-      ))}
+      {groups.map((group) =>
+        group.length === 1 ? (
+          <ServerPackButton key={group[0]?.id} pack={group[0] as PackSummary} onSelect={choose} />
+        ) : (
+          <div key={group[0]?.id} className="server-pack-group">
+            <p className="server-pack-group__head">
+              📚 <strong>{group[0]?.title}</strong>: {group.length} versions on this server (updates or alternates).
+              Choose one.
+            </p>
+            {group.map((pack, index) => (
+              <ServerPackButton key={pack.id} pack={pack} version={{ index, count: group.length }} onSelect={choose} />
+            ))}
+          </div>
+        ),
+      )}
     </div>
   )
 }

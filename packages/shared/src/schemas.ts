@@ -94,6 +94,8 @@ export const uploadCreateSchema = z.object({
       z.object({
         path: z.string().min(1).max(400),
         size: z.number().int().min(0),
+        /** File time from the browser (ms). A folder upload keeps the dates of the pack files with it. */
+        lastModified: z.number().int().min(0).optional(),
       }),
     )
     .min(1)

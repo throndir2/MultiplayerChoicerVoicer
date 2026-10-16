@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { FastifyBaseLogger } from 'fastify'
-import type { JobView, PackManifest, PackSourceInfo, PackSummary } from '@mcv/shared'
+import { packVersionDate, packVersionKey, type JobView, type PackManifest, type PackSourceInfo, type PackSummary } from '@mcv/shared'
 import type { AppConfig } from '../config.js'
 import { GAMEBANANA_HOSTS, type GameBananaClient } from '../catalog/gamebanana.js'
 import { downloadToFile } from '../util/download.js'
@@ -18,7 +18,7 @@ import {
 } from '../util/fsx.js'
 import { randomId, shortHash } from '../util/ids.js'
 import type { Media } from '../util/media.js'
-import { findArchives, findPackDirs, readPack } from './discover.js'
+import { findArchives, findPackDirs, fingerprintPack, readPack } from './discover.js'
 import { MANIFEST_FILE, processPackPhaseA, processPackPhaseB } from './processor.js'
 
 interface JobRecord extends JobView {
@@ -40,6 +40,34 @@ interface PendingJob {
 
 export const PACK_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/
 
+const versionKeys = new WeakMap<PackManifest, string>()
+
+export function versionKeyOf(manifest: PackManifest): string {
+  let key = versionKeys.get(manifest)
+  if (key === undefined) {
+    key = packVersionKey(manifest.title, manifest.authors)
+    versionKeys.set(manifest, key)
+  }
+  return key
+}
+
+/** Newest version first. */
+function byVersionDate(a: PackManifest, b: PackManifest): number {
+  return packVersionDate(b) - packVersionDate(a) || b.createdAt - a.createdAt
+}
+
+/** Every room can see the packs from GameBanana and links, and the uploads that the uploader made public. */
+function isListed(manifest: PackManifest): boolean {
+  return manifest.source.kind !== 'upload' || Boolean(manifest.source.public)
+}
+
+/** When the same files come again from a different source, the pack keeps the most open source. */
+function sourceRank(source: PackSourceInfo): number {
+  if (source.kind === 'gamebanana') return 3
+  if (source.kind === 'url') return 2
+  return source.public ? 1 : 0
+}
+
 export function toSummary(manifest: PackManifest): PackSummary {
   return {
     id: manifest.id,
@@ -54,6 +82,9 @@ export function toSummary(manifest: PackManifest): PackSummary {
     videoProgress: manifest.videoProgress,
     source: manifest.source,
     manifestUrl: `/api/packs/${encodeURIComponent(manifest.id)}`,
+    createdAt: manifest.createdAt,
+    builtAt: manifest.builtAt ?? null,
+    versionKey: versionKeyOf(manifest),
   }
 }
 
@@ -139,12 +170,61 @@ export class PackService extends EventEmitter {
     return job ? this.toView(job) : null
   }
 
+  /**
+   * The packs that every room can see, most recently used first. All versions of a pack come together,
+   * newest version first, and count as one entry for the limit.
+   */
   listRecent(limit = 60): PackSummary[] {
-    return [...this.manifests.values()]
-      .filter((manifest) => manifest.source.kind !== 'upload' || manifest.source.public)
-      .sort((a, b) => (this.lastUsed.get(b.id) ?? b.createdAt) - (this.lastUsed.get(a.id) ?? a.createdAt))
-      .slice(0, limit)
-      .map(toSummary)
+    const used = (manifest: PackManifest) => this.lastUsed.get(manifest.id) ?? manifest.createdAt
+    const groups = new Map<string, PackManifest[]>()
+    for (const manifest of [...this.manifests.values()].filter(isListed).sort((a, b) => used(b) - used(a))) {
+      const key = versionKeyOf(manifest)
+      const group = groups.get(key)
+      if (group) group.push(manifest)
+      else if (groups.size < limit) groups.set(key, [manifest])
+    }
+    return [...groups.values()].flatMap((group) => group.sort(byVersionDate).map(toSummary))
+  }
+
+  /**
+   * All versions of a pack that the room can see: the pack itself and the listed packs with the same title
+   * and authors. Newest first. Empty when the pack has no other version.
+   */
+  versions(packId: string): PackSummary[] {
+    const current = this.manifests.get(packId)
+    if (!current) return []
+    const key = versionKeyOf(current)
+    const group = [...this.manifests.values()].filter(
+      (manifest) => manifest.id === packId || (isListed(manifest) && versionKeyOf(manifest) === key),
+    )
+    return group.length > 1 ? group.sort(byVersionDate).map(toSummary) : []
+  }
+
+  /** A prepared pack with exactly the same files, if there is one. */
+  private findByHash(hash: string): PackManifest | null {
+    for (const manifest of this.manifests.values()) if (manifest.contentHash === hash) return manifest
+    return null
+  }
+
+  /** The same files came again. Use the existing pack, with the most open source, and retry a failed video. */
+  private async reuse(manifest: PackManifest, source: PackSourceInfo): Promise<void> {
+    let changed = false
+    if (sourceRank(source) > sourceRank(manifest.source)) {
+      manifest.source = source
+      changed = true
+    }
+    if (manifest.videoStatus === 'error') {
+      manifest.videoStatus = 'pending'
+      manifest.videoProgress = 0
+      delete manifest.videoError
+      if (!this.videoQueue.includes(manifest.id)) this.videoQueue.push(manifest.id)
+      changed = true
+    }
+    this.touch(manifest.id)
+    if (changed) {
+      await this.writeManifest(manifest)
+      this.emit('pack', manifest)
+    }
   }
 
   packDir(packId: string): string {
@@ -389,10 +469,19 @@ export class PackService extends EventEmitter {
         signal.throwIfAborted()
         const packId = `${prefix}-${index + 1}`
         if (this.manifests.has(packId)) {
-          ids.push(packId)
+          if (!ids.includes(packId)) ids.push(packId)
           continue
         }
         try {
+          const fingerprint = await fingerprintPack(dir)
+          signal.throwIfAborted()
+          const same = this.findByHash(fingerprint.hash)
+          if (same) {
+            await this.reuse(same, job.source)
+            if (!ids.includes(same.id)) ids.push(same.id)
+            this.log.info({ packId: same.id, job: job.key }, 'the same pack is already on the server')
+            continue
+          }
           const raw = await readPack(dir)
           const outDir = this.packDir(packId)
           await removeDir(outDir)
@@ -402,6 +491,7 @@ export class PackService extends EventEmitter {
             source: job.source,
             outDir,
             media: this.media,
+            fingerprint,
             onProgress: (fraction) => this.update(job, { progress: (index + fraction) / dirs.length }),
           })
           signal.throwIfAborted()
@@ -410,6 +500,8 @@ export class PackService extends EventEmitter {
           this.touch(packId)
           this.videoQueue.push(packId)
           ids.push(packId)
+          // Rooms that use another version of this pack learn about the new version.
+          this.emit('pack', manifest)
           if (raw.warnings.length > 0) this.log.info({ packId, warnings: raw.warnings.slice(0, 10) }, 'pack warnings')
         } catch (error) {
           await this.removeTemp(this.packDir(packId))

@@ -1,4 +1,5 @@
-import { promises as fs } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { createReadStream, promises as fs } from 'node:fs'
 import path from 'node:path'
 import {
   asNumberArray,
@@ -39,6 +40,50 @@ export const ARCHIVE_EXTENSIONS = ['.zip', '.7z', '.rar', '.tar', '.tgz', '.gz']
 async function readText(file: string): Promise<string> {
   const buffer = await fs.readFile(file)
   return buffer.toString('utf8')
+}
+
+/** Files that operating systems add to folders. They are not part of a pack. */
+const JUNK_FILES = new Set(['.ds_store', 'thumbs.db', 'desktop.ini'])
+/** File times before this (and in the future) are not real dates. */
+const EARLIEST_DATE = Date.UTC(2010, 0, 1)
+
+function hashFile(file: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    createReadStream(file)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('error', reject)
+      .on('end', () => resolve(hash.digest('hex')))
+  })
+}
+
+export interface PackFingerprint {
+  /** SHA-256 of the names and the contents of the pack files. */
+  hash: string
+  /** The newest file time, or null when the times are not real dates. */
+  builtAt: number | null
+}
+
+/**
+ * Identifies the files of a pack folder. An archive keeps the file times of the Pack Creator export,
+ * so the newest file time is the date when the pack was made or last changed.
+ */
+export async function fingerprintPack(dir: string): Promise<PackFingerprint> {
+  const entries = await fs.readdir(dir, { withFileTypes: true })
+  const files = entries
+    .filter((entry) => entry.isFile() && !JUNK_FILES.has(entry.name.toLowerCase()))
+    .map((entry) => entry.name)
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+  const hash = createHash('sha256')
+  let newest = 0
+  for (const name of files) {
+    const file = path.join(dir, name)
+    const stat = await fs.stat(file)
+    newest = Math.max(newest, stat.mtimeMs)
+    hash.update(`${name.toLowerCase()}\0${stat.size}\0${await hashFile(file)}\n`)
+  }
+  const builtAt = newest >= EARLIEST_DATE && newest <= Date.now() + 86_400_000 ? Math.round(newest) : null
+  return { hash: hash.digest('hex'), builtAt }
 }
 
 /** Finds every folder that looks like a Choicer Voicer pack. */

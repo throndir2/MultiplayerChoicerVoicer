@@ -42,7 +42,7 @@ import {
 import type { CatalogService } from '../catalog/catalog-service.js'
 import { parseGameBananaModUrl } from '../catalog/gamebanana.js'
 import type { AppConfig } from '../config.js'
-import type { PackService } from '../packs/pack-service.js'
+import { versionKeyOf, type PackService } from '../packs/pack-service.js'
 import { isHostAllowed } from '../util/download.js'
 import { ensureDir, readJson, removeDir, writeJsonAtomic } from '../util/fsx.js'
 import { createRoomCode, createToken, hashToken, randomId, shuffle } from '../util/ids.js'
@@ -248,7 +248,11 @@ export class RoomService extends EventEmitter {
     packs.isInUse = (packId) => this.isPackInUse(packId)
     packs.on('job', (job: JobView) => this.onJob(job))
     packs.on('pack', (manifest: PackManifest) => {
-      for (const room of this.rooms.values()) if (this.roomUsesPack(room, manifest.id)) this.emit('state', room.code)
+      const key = versionKeyOf(manifest)
+      for (const room of this.rooms.values()) {
+        const current = room.packId ? this.packs.manifest(room.packId) : null
+        if (this.roomUsesPack(room, manifest.id) || (current && versionKeyOf(current) === key)) this.emit('state', room.code)
+      }
     })
     packs.on('video', (packId: string, fraction: number) => {
       for (const room of this.rooms.values()) {
@@ -535,6 +539,7 @@ export class RoomService extends EventEmitter {
       settings: room.settings,
       pack: room.packId ? this.packs.summary(room.packId) : null,
       packChoices: room.packChoices.map((id) => this.packs.summary(id)).filter((value) => value !== null),
+      packVersions: room.packId ? this.packs.versions(room.packId) : [],
       job: this.packs.job(room.jobKey),
       suggestions: room.suggestions,
       queue: room.queue.map(
@@ -997,7 +1002,11 @@ export class RoomService extends EventEmitter {
     const room = this.get(code)
     this.requireHost(room, actorId)
     this.requirePhase(room, 'lobby', 'results')
-    if (!room.packChoices.includes(packId) || !this.packs.manifest(packId)) throw new RoomError('Unknown pack', 404)
+    const isVersion = Boolean(room.packId && this.packs.versions(room.packId).some((entry) => entry.id === packId))
+    if ((!room.packChoices.includes(packId) && !isVersion) || !this.packs.manifest(packId)) {
+      throw new RoomError('Unknown pack', 404)
+    }
+    if (!room.packChoices.includes(packId)) room.packChoices = [packId]
     room.packId = packId
     room.cast = {}
     this.packs.touch(packId)

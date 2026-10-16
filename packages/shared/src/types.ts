@@ -95,7 +95,12 @@ export interface PackManifest {
   videoError?: string
   lines: PackLine[]
   characters: PackCharacter[]
+  /** When the server prepared the pack (the upload or download date). */
   createdAt: number
+  /** SHA-256 of the files of the pack folder. The same files give the same pack. Missing on old packs. */
+  contentHash?: string
+  /** The newest file time in the pack folder: when the pack was made or last changed. Null if unknown. */
+  builtAt?: number | null
 }
 
 export interface PackSummary {
@@ -111,6 +116,10 @@ export interface PackSummary {
   videoProgress: number
   source: PackSourceInfo
   manifestUrl: string
+  createdAt: number
+  builtAt: number | null
+  /** Packs with the same key are versions of one pack (same title and authors in `_pack_info.ini`). */
+  versionKey: string
 }
 
 export interface JobView {
@@ -326,6 +335,8 @@ export interface RoomView {
   settings: RoomSettings
   pack: PackSummary | null
   packChoices: PackSummary[]
+  /** All versions of the current pack on this server, newest first. Empty when there is only one version. */
+  packVersions: PackSummary[]
   job: JobView | null
   /** Packs that players suggested. The host can use them now, put them in the queue, or remove them. */
   suggestions: PackPick[]

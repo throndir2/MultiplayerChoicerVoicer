@@ -33,6 +33,8 @@ export async function processPackPhaseA(options: {
   source: PackSourceInfo
   outDir: string
   media: Media
+  /** From `fingerprintPack`, read before phase A moves the video. */
+  fingerprint?: { hash: string; builtAt: number | null }
   onProgress: (fraction: number) => void
 }): Promise<PackManifest> {
   const { raw, packId, outDir, media } = options
@@ -149,6 +151,10 @@ export async function processPackPhaseA(options: {
       .map((entry) => ({ ...entry, seconds: Math.round(entry.seconds * 10) / 10 }))
       .sort((a, b) => b.seconds - a.seconds),
     createdAt: Date.now(),
+  }
+  if (options.fingerprint) {
+    manifest.contentHash = options.fingerprint.hash
+    manifest.builtAt = options.fingerprint.builtAt
   }
   await writeJsonAtomic(path.join(outDir, MANIFEST_FILE), manifest)
   return manifest

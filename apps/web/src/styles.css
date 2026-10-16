@@ -825,6 +825,17 @@ input[type='radio'] {
   font-weight: 600;
 }
 
+.pack__versions {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pack__versions p {
+  margin: 0;
+}
+
 .pack__video {
   margin-top: 0.6rem;
 }
@@ -1311,6 +1322,28 @@ input[type='radio'] {
 .server-pack > span:last-child {
   display: flex;
   flex-direction: column;
+}
+
+.server-pack__dates {
+  font-size: 0.82rem;
+}
+
+.server-pack__dates .badge {
+  margin: 0 0.4rem 0 0;
+}
+
+.server-pack-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+
+.server-pack-group__head {
+  margin: 0;
+  font-size: 0.9rem;
 }
 
 .upload,

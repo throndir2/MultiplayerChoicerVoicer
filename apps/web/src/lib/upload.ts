@@ -17,7 +17,10 @@ export async function uploadPack(
   onProgress: (fraction: number) => void,
 ): Promise<JobView | null> {
   const { uploadId } = await api<{ uploadId: string }>(`/api/rooms/${code}/uploads`, {
-    body: { files: items.map((item) => ({ path: item.path, size: item.file.size })), public: isPublic },
+    body: {
+      files: items.map((item) => ({ path: item.path, size: item.file.size, lastModified: item.file.lastModified })),
+      public: isPublic,
+    },
     token,
   })
   const total = items.reduce((sum, item) => sum + item.file.size, 0) || 1
