@@ -8,6 +8,8 @@ import {
   assetStatusSchema,
   castAssignSchema,
   dubTargetSchema,
+  keywordAddSchema,
+  keywordRemoveSchema,
   packSelectSchema,
   phaseSetSchema,
   playbackControlSchema,
@@ -145,6 +147,10 @@ export function attachRealtime(httpServer: HttpServer, rooms: RoomService, log: 
       rooms.updateSettings(code, playerId, clean)
     })
     command(ClientEvents.packSelect, packSelectSchema, ({ packId }) => rooms.selectPack(code, playerId, packId))
+    command(ClientEvents.keywordAdd, keywordAddSchema, ({ text }) => rooms.addKeywords(code, playerId, text))
+    command(ClientEvents.keywordRemove, keywordRemoveSchema, ({ keyword }) =>
+      rooms.removeKeyword(code, playerId, keyword),
+    )
     command(ClientEvents.castAssign, castAssignSchema, ({ character, playerId: target }) =>
       rooms.castAssign(code, playerId, character, target),
     )

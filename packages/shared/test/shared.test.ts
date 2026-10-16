@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildCues, cleanCaption, roomCodeSchema, type DubView, type PackManifest } from '../src/index.js'
+import { buildCues, cleanCaption, parseKeywords, roomCodeSchema, type DubView, type PackManifest } from '../src/index.js'
+
+describe('parseKeywords', () => {
+  it('splits at commas, trims and removes duplicates', () => {
+    expect(parseKeywords(' Shrek,  spongebob ;shrek\n\nHazbin   Hotel ,')).toEqual(['Shrek', 'spongebob', 'Hazbin Hotel'])
+    expect(parseKeywords(' , ')).toEqual([])
+  })
+})
 
 describe('cleanCaption', () => {
   it('removes the speaker tag and curly quotes', () => {

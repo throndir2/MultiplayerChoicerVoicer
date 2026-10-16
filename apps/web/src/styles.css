@@ -911,6 +911,63 @@ input[type='radio'] {
   border: 1px solid rgba(255, 107, 107, 0.4);
 }
 
+.random-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.9rem;
+  margin-bottom: 0.8rem;
+  border-radius: 10px;
+  background: var(--bg-2);
+}
+
+.keywords__list {
+  list-style: none;
+  margin: 0.6rem 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.keyword {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.2rem 0.15rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.keyword__remove {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+}
+
+.keyword__remove:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.keywords__form {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+}
+
+.keywords__form input {
+  flex: 1;
+  min-width: 0;
+}
+
 .modes {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
