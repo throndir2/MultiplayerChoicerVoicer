@@ -35,6 +35,7 @@ export interface RawPack {
 const VIDEO_EXTENSIONS = ['.ogv', '.mp4', '.webm', '.mkv', '.mov']
 const AUDIO_EXTENSIONS = ['.mp3', '.ogg', '.wav', '.m4a', '.opus', '.flac']
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp']
+const LINE_EXTENSIONS = ['.txt', '.ini']
 export const ARCHIVE_EXTENSIONS = ['.zip', '.7z', '.rar', '.tar', '.tgz', '.gz']
 
 async function readText(file: string): Promise<string> {
@@ -170,7 +171,9 @@ export async function readPack(dir: string): Promise<RawPack> {
 
   const lines: RawLine[] = []
   for (const name of files) {
-    if (path.extname(name).toLowerCase() !== '.txt') continue
+    // The Pack Creator writes .txt line files, but some packs use .ini files with the same content.
+    if (!LINE_EXTENSIONS.includes(path.extname(name).toLowerCase())) continue
+    if (name.toLowerCase() === '_pack_info.ini') continue
     const base = name.slice(0, -4)
     let section
     try {
