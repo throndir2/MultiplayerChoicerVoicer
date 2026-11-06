@@ -24,7 +24,7 @@ My Pack/
 └── ...
 ```
 
-The `.ini` and `.txt` files use the Godot `ConfigFile` format. The values are JSON-like literals. A line can have more than one timestamp. In that case, the same recording plays at each timestamp. A line can have more than one character. Captions often start with a `[Character]` tag. The subtitles remove this tag, because they show the character separately.
+The `.ini` and `.txt` files use the Godot `ConfigFile` format. The values are JSON-like literals. Some packs use a `.ini` extension for the line files instead of `.txt`. The server reads both. A line can have more than one timestamp. In that case, the same recording plays at each timestamp. A line can have more than one character. Captions often start with a `[Character]` tag. The subtitles remove this tag, because they show the character separately.
 
 During the final playback, the game mutes the clip. It plays the backing track and puts each recording at its timestamp. We do the same.
 
