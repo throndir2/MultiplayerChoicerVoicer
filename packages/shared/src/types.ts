@@ -8,6 +8,12 @@ export const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
  * player heard the start of the line and keeps the timing of the player, so a take starts with the line.
  */
 export const RECORDING_OFFSET = 0
+/**
+ * Seconds that the microphone keeps recording after the player stops or the line ends. The browser encoder
+ * drops the last part of a recording at the stop, and players often finish a little after the original line.
+ * The server keeps this tail too, so playback includes it.
+ */
+export const RECORDING_TAIL_SECONDS = 0.6
 /** Delay between the host pressing play and the synchronised start on every client. */
 export const PLAYBACK_LEAD_MS = 1500
 /** Keywords in the shared room list for the random pack pick. */

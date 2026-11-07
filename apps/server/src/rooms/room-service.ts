@@ -38,6 +38,7 @@ import {
   type RoundView,
   type SessionResponse,
   type SourceRequest,
+  RECORDING_TAIL_SECONDS,
 } from '@mcv/shared'
 import type { CatalogService } from '../catalog/catalog-service.js'
 import { parseGameBananaModUrl } from '../catalog/gamebanana.js'
@@ -1360,7 +1361,8 @@ export class RoomService extends EventEmitter {
     if (room.round?.finished[playerId]) throw new RoomError('You have already finished recording', 409)
     if (body.length < 200) throw new RoomError('The recording is empty')
     const line = this.packs.manifest(room.round?.packId ?? '')?.lines.find((entry) => entry.id === lineId)
-    const maxSeconds = line?.promptDuration ?? 0
+    // The take can run a little past the original line (the recording tail), so the end of the take is kept.
+    const maxSeconds = line?.promptDuration ? line.promptDuration + RECORDING_TAIL_SECONDS + 0.25 : 0
     const mime = contentType.split(';')[0]?.trim().toLowerCase() ?? ''
     const extension = AUDIO_EXTENSIONS[mime] ?? 'bin'
     const dir = this.roomDir(room)
