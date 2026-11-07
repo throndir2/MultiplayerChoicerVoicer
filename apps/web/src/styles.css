@@ -1632,6 +1632,25 @@ input[type='radio'] {
   animation: pulse 1.2s ease-in-out infinite;
 }
 
+.stage__countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.stage__countdown span {
+  font-size: 4.5rem;
+  line-height: 1;
+}
+
 .stage__overlay {
   position: absolute;
   inset: 0;
