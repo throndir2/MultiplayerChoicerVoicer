@@ -8,6 +8,13 @@ import { Recorder } from './Recorder'
 
 const GUIDE_KEY = 'mcv:guide-volume'
 const AUTO_PLAY_KEY = 'mcv:auto-play-original'
+const COUNT_IN_KEY = 'mcv:count-in-seconds'
+const DEFAULT_COUNT_IN = 2
+
+function savedCountIn(): number {
+  const saved = Number(window.localStorage.getItem(COUNT_IN_KEY) ?? DEFAULT_COUNT_IN)
+  return Number.isFinite(saved) ? Math.min(5, Math.max(0, saved)) : DEFAULT_COUNT_IN
+}
 
 function savedGuideVolume(): number {
   const saved = Number(window.localStorage.getItem(GUIDE_KEY) ?? '0.3')
@@ -23,6 +30,7 @@ export function RecordingView() {
   const { room, me, roundManifest: manifest, command, notify } = useRoom()
   const mic = useMicrophone()
   const [guideVolume, setGuideVolume] = useState(savedGuideVolume)
+  const [countIn, setCountIn] = useState(savedCountIn)
   const [autoPlay, setAutoPlay] = useState(() => window.localStorage.getItem(AUTO_PLAY_KEY) !== '0')
   /** True after the player moved to another line. The first line does not play by itself. */
   const [navigated, setNavigated] = useState(false)
@@ -211,6 +219,7 @@ export function RecordingView() {
               total={tasks.length}
               mic={mic}
               guideVolume={guideVolume}
+              countIn={countIn}
               showScene={showScene}
               requireTake={!allowBack}
               autoPlay={autoPlay && navigated}
@@ -264,6 +273,25 @@ export function RecordingView() {
               <p className="hint">
                 The original line plays at this volume while you record, so you can hear it and speak with it. Use
                 headphones, or the microphone also records the original line.
+              </p>
+              <label className="field">
+                <span>Countdown before the line: {countIn > 0 ? `${countIn.toFixed(1)} s` : 'off'}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={5}
+                  step={0.5}
+                  value={countIn}
+                  onChange={(event) => {
+                    const value = Number(event.target.value)
+                    setCountIn(value)
+                    window.localStorage.setItem(COUNT_IN_KEY, String(value))
+                  }}
+                />
+              </label>
+              <p className="hint">
+                Time from “Record” to the start of the line. A countdown shows when to speak. The part before the
+                line is not kept.
               </p>
               <label className="toggle">
                 <input

@@ -86,6 +86,8 @@ interface Props {
   mic: Microphone
   /** Volume (0 to 1) of the original line while the player records. 0 does not play it. */
   guideVolume: number
+  /** Seconds of count-in between "Record" and the start of the line. The microphone records during the count-in. */
+  countIn: number
   /** Play the video of the scene. Off shows only the still picture of the line, so the video stays a surprise. */
   showScene: boolean
   /** "Next" needs a take of this line (when the player cannot come back). */
@@ -107,6 +109,7 @@ export function Recorder({
   total,
   mic,
   guideVolume,
+  countIn,
   showScene,
   requireTake,
   autoPlay,
@@ -122,6 +125,8 @@ export function Recorder({
   const [playing, setPlaying] = useState<'original' | 'take' | null>(null)
   const [sceneActive, setSceneActive] = useState(false)
   const [elapsed, setElapsed] = useState(0)
+  /** Whole seconds until the line starts, while the count-in runs. */
+  const [countdown, setCountdown] = useState<number | null>(null)
   /** True while "Record" waits for the microphone (only when it was not open yet). */
   const [micWait, setMicWait] = useState(false)
 
@@ -420,7 +425,8 @@ export function Recorder({
     // The recording starts at once. Everything else follows while the microphone already records.
     const source = ctx.createMediaStreamSource(stream)
     sourceNode.current = source
-    const track = new SampleTrack(ctx.sampleRate, lineSeconds + 2)
+    const lineDelay = Math.max(0, countIn)
+    const track = new SampleTrack(ctx.sampleRate, lineSeconds + lineDelay + 2)
     try {
       stopCapture.current = await captureSamples(ctx, source, (chunk) => track.push(chunk))
     } catch {
@@ -453,14 +459,16 @@ export function Recorder({
     }
     recorderRef.current = recorder
     live.current = track
-    liveLead.current = 0
+    liveLead.current = lineDelay
     recorder.start(250)
     const startedAt = ctx.currentTime
     modeRef.current = 'recording'
     setElapsed(0)
+    setCountdown(lineDelay > 0 ? Math.ceil(lineDelay) : null)
     setMode('recording')
     const token = playToken.current
     let shown = -1
+    let shownCount: number | null = lineDelay > 0 ? Math.ceil(lineDelay) : null
     const tick = () => {
       if (modeRef.current !== 'recording') return
       const linePosition = Math.min(lineSeconds, ctx.currentTime - startedAt - liveLead.current)
@@ -469,6 +477,11 @@ export function Recorder({
       if (tenths !== shown) {
         shown = tenths
         setElapsed(Math.max(0, linePosition))
+      }
+      const count = linePosition < 0 ? Math.ceil(-linePosition) : null
+      if (count !== shownCount) {
+        shownCount = count
+        setCountdown(count)
       }
       draw()
       frame.current = requestAnimationFrame(tick)
@@ -499,6 +512,9 @@ export function Recorder({
         })
       }
     }
+    // The count-in: the microphone records already, and the line starts when the count-in ends.
+    const waitMs = (startedAt + lineDelay - ctx.currentTime) * 1000
+    if (waitMs > 0) await new Promise<void>((resolve) => window.setTimeout(resolve, waitMs))
     // A stop or a line change while the line loads cancels the rest.
     if (token !== playToken.current || recorderRef.current !== recorder || modeRef.current !== 'recording') return
     const lineAt = ctx.currentTime
@@ -665,6 +681,12 @@ export function Recorder({
           <span className="stage__speaker">{characters}</span>
           {line.text}
         </div>
+        {mode === 'recording' && countdown !== null && (
+          <div className="stage__countdown" aria-live="assertive">
+            <span>{countdown}</span>
+            Get ready to speak
+          </div>
+        )}
         {mode === 'recording' && (
           <div className="stage__rec">
             ● REC {Math.min(elapsed, lineSeconds).toFixed(1)} s / {lineSeconds.toFixed(1)} s
@@ -734,7 +756,9 @@ export function Recorder({
         )}
       </div>
       <p className="hint">
-        The recording starts at once when you press Record.{' '}
+        {countIn > 0
+          ? `The line starts ${countIn.toFixed(1)} s after you press Record. A countdown shows when to speak. `
+          : 'The recording starts at once when you press Record. '}
         {guideVolume > 0 && line.promptUrl
           ? 'The original line plays quietly at the same time. Speak with it. '
           : 'Speak your line. '}
