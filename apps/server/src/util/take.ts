@@ -8,7 +8,7 @@ export const TAKE_RATE = 48_000
 const FRAME_SECONDS = 0.01
 /** Seconds kept before the first sound of the take and after the last sound. */
 const KEEP_BEFORE = 0.05
-const KEEP_AFTER = 0.08
+const KEEP_AFTER = 0.2
 
 /** Removes DC and rumble (one-pole high-pass at about 50 Hz). */
 function highPass(samples: Float32Array, sampleRate: number): Float32Array {

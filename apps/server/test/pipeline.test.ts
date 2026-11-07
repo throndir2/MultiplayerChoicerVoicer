@@ -58,11 +58,11 @@ describe.skipIf(!hasFfmpeg)('pack pipeline', () => {
 
     const recording = path.join(work, 'take.m4a')
     const { duration: seconds } = await media.processRecording(path.join(outDir, 'lines', 'L001.mp3'), recording)
-    // 0.15 s lead-in + 1.6 s tone + 0.25 s tail. The tone stays where it is in the upload.
+    // 0.15 s lead-in + 1.6 s tone + up to 0.25 s tail (0.2 s kept after the last sound). The tone stays where it is.
     expect(seconds).toBeGreaterThan(1.6)
-    expect(seconds).toBeLessThan(1.95)
+    expect(seconds).toBeLessThan(2.05)
 
-    // A take is never longer than the original line.
+    // A take is never longer than the limit (the original line plus the recording tail).
     const capped = path.join(work, 'capped.m4a')
     const cappedResult = await media.processRecording(path.join(outDir, 'lines', 'L001.mp3'), capped, { maxSeconds: 1 })
     expect(cappedResult.duration).toBeLessThanOrEqual(1)
