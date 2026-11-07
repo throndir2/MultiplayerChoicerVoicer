@@ -9,6 +9,7 @@ import {
 import {
   ClientEvents,
   RECORDING_OFFSET,
+  RECORDING_TAIL_SECONDS,
   type DubView,
   type PackLine,
   type PackManifest,
@@ -164,6 +165,7 @@ export function Recorder({
   const sourceNode = useRef<MediaStreamAudioSourceNode | null>(null)
   const stopCapture = useRef<(() => void) | null>(null)
   const autoStop = useRef<number | null>(null)
+  const tailTimer = useRef<number | null>(null)
   const cancelled = useRef(false)
 
   const color = me?.color ?? '#9c6bff'
@@ -456,7 +458,7 @@ export function Recorder({
     }
     const ctx = audioContext()
     const lineDelay = Math.max(0, countIn)
-    const track = new SampleTrack(ctx.sampleRate, lineSeconds + lineDelay + 2)
+    const track = new SampleTrack(ctx.sampleRate, lineSeconds + lineDelay + 2 + RECORDING_TAIL_SECONDS)
     const chunks: Blob[] = []
     cancelled.current = false
     // Seconds from the start of the upload to the start of the original line, and the microphone facts for the
@@ -575,7 +577,7 @@ export function Recorder({
     const latency = guide ? Math.min(0.5, Math.max(0, (ctx.baseLatency || 0) + (ctx.outputLatency || 0))) : 0
     timing.lead = sinceStart() + latency
     liveLead.current = timing.lead
-    // The recording never runs longer than the original line.
+    // The recording stops at the end of the original line, plus the tail (see stopRecording).
     const remaining = timing.lead + lineSeconds - sinceStart()
     autoStop.current = window.setTimeout(() => stopRecording(), Math.max(0, remaining) * 1000)
   }
@@ -585,11 +587,19 @@ export function Recorder({
     if (autoStop.current !== null) window.clearTimeout(autoStop.current)
     autoStop.current = null
     const recorder = recorderRef.current
-    if (recorder && recorder.state !== 'inactive') recorder.stop()
-    recorderRef.current = null
     modeRef.current = 'saving'
     setMode('saving')
     stopPlayback()
+    // The microphone records the tail before the recorder stops, so the last words are not lost. The recorder
+    // stays in recorderRef until then, so a line change still cancels it.
+    tailTimer.current = window.setTimeout(() => {
+      tailTimer.current = null
+      if (recorderRef.current === recorder) recorderRef.current = null
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.requestData()
+        recorder.stop()
+      }
+    }, RECORDING_TAIL_SECONDS * 1000)
   }
 
   async function finish(blob: Blob, timing: { lead: number; mic: string }) {
@@ -639,7 +649,10 @@ export function Recorder({
   useEffect(
     () => () => {
       cancelled.current = true
+      if (tailTimer.current !== null) window.clearTimeout(tailTimer.current)
+      tailTimer.current = null
       const recorder = recorderRef.current
+      recorderRef.current = null
       if (recorder && recorder.state !== 'inactive') recorder.stop()
       cleanupRecording()
     },
