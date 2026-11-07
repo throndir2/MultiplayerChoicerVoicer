@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import {
   ClientEvents,
   RECORDING_OFFSET,
@@ -140,6 +147,10 @@ export function Recorder({
   const live = useRef<SampleTrack | null>(null)
   /** Seconds from the start of the live recording to the moment the player hears the start of the line. */
   const liveLead = useRef(0)
+  /** Seconds from the start of the live recording to the first sample of the live waveform. */
+  const liveStart = useRef(0)
+  /** True while the press that started the recording is down, so its click does not stop the recording. */
+  const pressed = useRef(false)
   const playhead = useRef<number | null>(null)
   const sources = useRef<AudioBufferSourceNode[]>([])
   const frame = useRef<number | null>(null)
@@ -190,7 +201,7 @@ export function Recorder({
         samples: track.data,
         length: track.length,
         sampleRate: track.sampleRate,
-        offset: -liveLead.current,
+        offset: liveStart.current - liveLead.current,
         color: withAlpha(color, 0.5),
         coreColor: withAlpha(color, 0.9),
         reference: liveLevel,
@@ -399,19 +410,35 @@ export function Recorder({
     sourceNode.current = null
   }
 
-  async function startRecording() {
+  async function startRecording(pressedAt = performance.now()) {
     if (modeRef.current !== 'idle' || starting.current) return
     starting.current = true
     try {
-      await beginRecording()
+      await beginRecording(pressedAt)
     } finally {
       starting.current = false
     }
   }
 
-  async function beginRecording() {
-    stopPlayback()
-    // Resume the audio clock while the click is fresh, so the browser allows it.
+  /** The Record button starts on the press, not on the release. The click of that press is then ignored. */
+  function pressRecord(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || modeRef.current !== 'idle') return
+    pressed.current = true
+    const release = () => window.setTimeout(() => (pressed.current = false), 0)
+    window.addEventListener('pointerup', release, { once: true })
+    window.addEventListener('pointercancel', release, { once: true })
+    void startRecording(event.timeStamp)
+  }
+
+  /** True for the click that ends the press which started the recording. */
+  function pressClick() {
+    if (!pressed.current) return false
+    pressed.current = false
+    return true
+  }
+
+  async function beginRecording(pressedAt: number) {
+    // Resume the audio clock while the click is fresh, so the browser allows it. The recording does not wait for it.
     const unlocking = unlockAudio()
     const ready = mic.stream?.getAudioTracks().some((track) => track.readyState === 'live')
     if (!ready) setMicWait(true)
@@ -421,28 +448,17 @@ export function Recorder({
       notify(mic.error || 'The microphone could not start')
       return
     }
-    await unlocking
-    const ctx = audioContext()
-
-    // The recording starts at once. Everything else follows while the microphone already records.
-    const source = ctx.createMediaStreamSource(stream)
-    sourceNode.current = source
-    const lineDelay = Math.max(0, countIn)
-    const track = new SampleTrack(ctx.sampleRate, lineSeconds + lineDelay + 2 + RECORDING_TAIL_SECONDS)
-    try {
-      stopCapture.current = await captureSamples(ctx, source, (chunk) => track.push(chunk))
-    } catch {
-      stopCapture.current = null
-    }
     const mimeType = pickRecorderMimeType()
     let recorder: MediaRecorder
     try {
       recorder = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 128_000 } : undefined)
     } catch {
       notify('This browser cannot record audio')
-      cleanupRecording()
       return
     }
+    const ctx = audioContext()
+    const lineDelay = Math.max(0, countIn)
+    const track = new SampleTrack(ctx.sampleRate, lineSeconds + lineDelay + 2 + RECORDING_TAIL_SECONDS)
     const chunks: Blob[] = []
     cancelled.current = false
     // Seconds from the start of the upload to the start of the original line, and the microphone facts for the
@@ -459,11 +475,17 @@ export function Recorder({
       if (cancelled.current) return
       void finish(new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' }), timing)
     }
+    // The recording starts at once. Everything else follows while the microphone already records. The times use
+    // the wall clock, because the audio clock can still be suspended here.
+    recorder.start(250)
+    const startedAt = performance.now()
+    const sinceStart = () => (performance.now() - startedAt) / 1000
+    console.debug(`Recording started ${Math.round(startedAt - pressedAt)} ms after the press`)
+    stopPlayback()
     recorderRef.current = recorder
     live.current = track
     liveLead.current = lineDelay
-    recorder.start(250)
-    const startedAt = ctx.currentTime
+    liveStart.current = 0
     modeRef.current = 'recording'
     setElapsed(0)
     setCountdown(lineDelay > 0 ? Math.ceil(lineDelay) : null)
@@ -473,7 +495,7 @@ export function Recorder({
     let shownCount: number | null = lineDelay > 0 ? Math.ceil(lineDelay) : null
     const tick = () => {
       if (modeRef.current !== 'recording') return
-      const linePosition = Math.min(lineSeconds, ctx.currentTime - startedAt - liveLead.current)
+      const linePosition = Math.min(lineSeconds, sinceStart() - liveLead.current)
       playhead.current = linePosition >= 0 ? linePosition : null
       const tenths = Math.floor(Math.max(0, linePosition) * 10)
       if (tenths !== shown) {
@@ -489,6 +511,24 @@ export function Recorder({
       frame.current = requestAnimationFrame(tick)
     }
     frame.current = requestAnimationFrame(tick)
+
+    // The live waveform needs the audio clock. It starts a little after the recording on the first press.
+    await unlocking
+    if (recorderRef.current === recorder) {
+      const source = ctx.createMediaStreamSource(stream)
+      sourceNode.current = source
+      liveStart.current = sinceStart()
+      try {
+        stopCapture.current = await captureSamples(ctx, source, (chunk) => track.push(chunk))
+      } catch {
+        stopCapture.current = null
+      }
+    }
+    // A stop during the setup already ran its cleanup.
+    if (recorderRef.current !== recorder) {
+      cleanupRecording()
+      return
+    }
 
     // The original line can play quietly during the recording, so the player can speak with it. It is
     // normally decoded already when the line opens.
@@ -515,7 +555,7 @@ export function Recorder({
       }
     }
     // The count-in: the microphone records already, and the line starts when the count-in ends.
-    const waitMs = (startedAt + lineDelay - ctx.currentTime) * 1000
+    const waitMs = (lineDelay - sinceStart()) * 1000
     if (waitMs > 0) await new Promise<void>((resolve) => window.setTimeout(resolve, waitMs))
     // A stop or a line change while the line loads cancels the rest.
     if (token !== playToken.current || recorderRef.current !== recorder || modeRef.current !== 'recording') return
@@ -535,10 +575,10 @@ export function Recorder({
     }
     // The player hears the original line after the output latency of the device.
     const latency = guide ? Math.min(0.5, Math.max(0, (ctx.baseLatency || 0) + (ctx.outputLatency || 0))) : 0
-    timing.lead = Math.max(0, lineAt - startedAt) + latency
+    timing.lead = sinceStart() + latency
     liveLead.current = timing.lead
     // The recording stops at the end of the original line, plus the tail (see stopRecording).
-    const remaining = timing.lead + lineSeconds - (ctx.currentTime - startedAt)
+    const remaining = timing.lead + lineSeconds - sinceStart()
     autoStop.current = window.setTimeout(() => stopRecording(), Math.max(0, remaining) * 1000)
   }
 
@@ -720,14 +760,23 @@ export function Recorder({
           {playing === 'original' ? '■ Stop' : '▶ Original'} <kbd>P</kbd>
         </button>
         {mode === 'recording' ? (
-          <button type="button" className="button button--record is-recording" onClick={stopRecording}>
+          <button
+            type="button"
+            className="button button--record is-recording"
+            onClick={() => {
+              if (!pressClick()) stopRecording()
+            }}
+          >
             ■ Stop <kbd>R</kbd>
           </button>
         ) : (
           <button
             type="button"
             className="button button--record"
-            onClick={() => void startRecording()}
+            onPointerDown={pressRecord}
+            onClick={() => {
+              if (!pressClick()) void startRecording()
+            }}
             disabled={mode !== 'idle'}
           >
             ● {recording ? 'Record again' : 'Record'} <kbd>R</kbd>
