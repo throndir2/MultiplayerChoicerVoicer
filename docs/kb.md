@@ -3,7 +3,7 @@
 **Status:** Implemented
 **Last Updated:** 2026-11-14
 **Audience:** Contributors and coding agents
-**Last verified:** 2026-11-14 against 2339555
+**Last verified:** 2026-11-14 against 1a5bee6
 **Code:** `.github/mcp.json`, `AGENTS.md`, `.github/copilot-instructions.md`, `scripts/kb/check_kb.py`, `scripts/kb/test_check_kb.py`
 
 ## Knowledge Base First
@@ -85,6 +85,20 @@ npx -y github:throndir2/repo-kb search "How are rooms persisted?" --top 5
 npx -y github:throndir2/repo-kb read docs/kb.md --heading "Page contract"
 npx -y github:throndir2/repo-kb status
 ```
+
+## Retrieval evaluation
+
+`repo-kb-eval.json` contains 30 repository questions with expected Markdown paths.
+The tool's format is an array of objects with `q` and `expect` fields.
+Run `npx -y github:throndir2/repo-kb eval docs/repo-kb-eval.json --json` after indexing.
+Evaluation measures retrieval, not implementation correctness or whole-session token cost.
+
+On 2026-11-14, the local hybrid index contained 14 Markdown files and 73 embedded sections.
+The 30-question evaluation returned hit@1 93.3% (28/30), hit@3 100% (30/30), and hit@5 100% (30/30).
+Mean reciprocal rank was 0.961. Median query time was 7 ms; maximum was 240 ms.
+These timings exclude process startup, indexing, and embedding preparation.
+The two non-first results were missing-ffmpeg startup (rank 2) and caption/cue construction (rank 3).
+Every expected page was in the top three without changing questions to match results.
 
 There is no development setup script or custom include configuration.
 The GitHub wiki setting is enabled, but its git remote returns Repository not found.

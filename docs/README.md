@@ -21,6 +21,7 @@ The pages describe the current code. A Planned section describes work that is no
 - [Development](development.md): Which local commands, tests, tools, and environment keys are supported?
 - [Deployment](deployment.md): How does a contributor release or roll back the service on Nahida?
 - [Superseded design](plan.md): Where should older design links point now?
+- [Retrieval evaluation questions](repo-kb-eval.json): Which real questions measure KB search quality?
 
 ## Code areas
 
