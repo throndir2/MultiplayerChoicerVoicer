@@ -8,3 +8,5 @@ data/
 coverage/
 .vite/
 .playwright-mcp/
+__pycache__/
+*.pyc
