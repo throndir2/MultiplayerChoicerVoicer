@@ -3,7 +3,7 @@
 **Status:** Implemented
 **Last Updated:** 2026-11-14
 **Audience:** Contributors and coding agents
-**Last verified:** 2026-11-14 against 1a5bee6
+**Last verified:** 2026-11-14 against c961fe4
 **Code:** `.github/mcp.json`, `AGENTS.md`, `.github/copilot-instructions.md`, `scripts/kb/check_kb.py`, `scripts/kb/test_check_kb.py`
 
 ## Knowledge Base First
@@ -93,12 +93,15 @@ The tool's format is an array of objects with `q` and `expect` fields.
 Run `npx -y github:throndir2/repo-kb eval docs/repo-kb-eval.json --json` after indexing.
 Evaluation measures retrieval, not implementation correctness or whole-session token cost.
 
-On 2026-11-14, the local hybrid index contained 14 Markdown files and 73 embedded sections.
+On 2026-11-14, the final local hybrid index contained 15 Markdown files and 78 embedded sections.
 The 30-question evaluation returned hit@1 93.3% (28/30), hit@3 100% (30/30), and hit@5 100% (30/30).
-Mean reciprocal rank was 0.961. Median query time was 7 ms; maximum was 240 ms.
+Mean reciprocal rank was 0.961. Median query time was 5 ms; maximum was 204 ms.
 These timings exclude process startup, indexing, and embedding preparation.
 The two non-first results were missing-ffmpeg startup (rank 2) and caption/cue construction (rank 3).
 Every expected page was in the top three without changing questions to match results.
+
+See [the historical lookup comparison](kb-comparison.md) for a separate five-task estimate.
+It uses pre-task documentation, not today's descriptions of completed fixes.
 
 There is no development setup script or custom include configuration.
 The GitHub wiki setting is enabled, but its git remote returns Repository not found.

@@ -1,0 +1,60 @@
+[
+  {
+    "name": "Voice order",
+    "session": "a3bc652b-36a7-4f32-8396-249608e67913",
+    "before": "1dac83b^",
+    "cutoff_utc": "2026-10-16T19:55:53.032Z",
+    "query": "Where is a player's recording line order chosen?",
+    "expected_chapter": 7,
+    "source_calls": 7,
+    "source_chars": 33884,
+    "routing_chars": [920, 6592, 3059, 1621, 2416, 74]
+  },
+  {
+    "name": "Pack versions",
+    "session": "6f178b78-96ee-4854-a866-12f93a048fb7",
+    "before": "39e37a5^",
+    "cutoff_utc": "2026-10-16T21:25:18.209Z",
+    "query": "Where are uploaded pack files discovered, processed and turned into manifests?",
+    "expected_chapter": 4,
+    "source_calls": 23,
+    "source_chars": 0,
+    "source_char_parts": [17081,3437,4603,4773,20381,6464,5919,10513,16558,6661,5543,5704,2244,5831,1002,1554,650,1003,7300,2330,4048,1835,1529],
+    "routing_chars": [142,1177,6692,148,16562,8278,2581,6603,2419,3967]
+  },
+  {
+    "name": "Instant record start",
+    "session": "d234eb90-c7f8-41a4-b187-4a61246ae6b4",
+    "before": "8ef262b^",
+    "cutoff_utc": "2026-10-16T22:04:49.184Z",
+    "query": "Where does Record start microphone capture and play the original line?",
+    "expected_chapter": 7,
+    "source_calls": 10,
+    "source_chars": 56330,
+    "routing_chars": [3427,7121,1638,4676]
+  },
+  {
+    "name": "Waveform jitter",
+    "session": "79c55c16-b763-49ec-be35-0ccc331c5c69",
+    "before": "6fe7afc^",
+    "cutoff_utc": "2026-10-16T22:29:17.017Z",
+    "query": "Where is the live microphone waveform drawn against the original line?",
+    "expected_chapter": 7,
+    "source_calls": 7,
+    "source_chars": 47436,
+    "routing_chars": [8924],
+    "routing_calls": 10
+  },
+  {
+    "name": "Recording downloads",
+    "session": "fe9b77ec-4ed1-4bc2-8d02-5c2e11eb23a9",
+    "before": "707c676^",
+    "cutoff_utc": "2026-10-16T23:14:59.389Z",
+    "query": "Where are final dub video exports and playback download controls implemented?",
+    "expected_chapter": 8,
+    "source_calls": 18,
+    "source_chars": 0,
+    "source_char_parts": [3390,18760,8482,4632,3959,11084,6733,7788,9776,5942,8802,3570,3280,5162,3090,3596,1230,3992],
+    "routing_chars": [148,11994,15878,2496,2516,3243,2764,2977,1697,4909,3293,null,2372,3322,1258]
+  }
+]
