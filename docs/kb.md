@@ -3,8 +3,8 @@
 **Status:** Implemented
 **Last Updated:** 2026-11-14
 **Audience:** Contributors and coding agents
-**Last verified:** 2026-11-14 against 98d6da6
-**Code:** `.github/mcp.json`, `scripts/kb/check_kb.py`, `scripts/kb/test_check_kb.py`
+**Last verified:** 2026-11-14 against 2339555
+**Code:** `.github/mcp.json`, `AGENTS.md`, `.github/copilot-instructions.md`, `scripts/kb/check_kb.py`, `scripts/kb/test_check_kb.py`
 
 ## Knowledge Base First
 

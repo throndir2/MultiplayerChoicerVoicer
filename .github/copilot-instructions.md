@@ -1,91 +1,26 @@
 # Repository instructions
 
-These instructions apply to all agent work in this repository.
+## Knowledge Base First (Required)
 
-## Always merge finished work into `main` and deploy it
+Always use KB search when you must find, search, or move through the repository.
+Call `kb_search` on the local repo-kb MCP server. Open cited sections with `kb_read_section`.
+Use each page's `**Code:**` paths to locate the source. Then read only the code that you need.
+Do not explore with broad grep, glob, directory listings, or file reads.
+Use these tools only for an exact name or path supplied by the KB.
+If the KB has no answer or a wrong answer, find the answer in code and fix the doc in the same pull request.
 
-Do not leave finished work on a branch or in an open pull request. When a task is complete, merge it into `main`. Then deploy `main` to Nahida (see "Deploy every finished change" below).
+## Keep the KB true (Required)
 
-1. Run the local checks from the repository root:
+Update the KB in the same pull request when code, config, scripts, commands, or behavior are added, renamed, moved, or deleted.
+Update the page, its `**Code:**` and `**Last verified:**` lines, and its folder index.
+A new feature gets a page or section. Delete a removed feature or mark it Superseded.
+If no doc must change, the pull request body says `KB: no change needed` and gives the reason.
+Run `python scripts/kb/check_kb.py --diff origin/main` before merge. Fix every error.
 
-   ```powershell
-   npm run typecheck
-   npm test
-   npm run build
-   ```
+## Repository workflow and map
 
-2. Fix every failure before you continue.
-3. Commit the changes to the session branch, and push the branch.
-4. Open a pull request to `main`, or update the existing pull request for the branch.
-5. Merge the pull request with a merge commit:
-
-   ```powershell
-   gh pr merge <number> --merge
-   ```
-
-   Do not add `--delete-branch` when you work in a Git worktree. The command then tries to check out `main`, which the main checkout already uses.
-
-6. Make sure that the merge is complete: `gh pr view <number> --json state,mergedAt` must show `MERGED`. Directly after a push, GitHub can report "Pull Request is not mergeable" while it calculates the merge state. Wait until `gh pr view <number> --json mergeable,mergeStateStatus` shows `MERGEABLE` and `CLEAN`, then merge again.
-7. If the pull request has a merge conflict, merge `origin/main` into the branch, resolve the conflict, run the checks again, push, and merge.
-8. After a merge, a session branch can continue. Before new work, run `git fetch origin` and `git merge origin/main` on the branch.
-9. If a new pull request cannot be opened for the branch (for example, the session's pull request is already merged), fast-forward `main` directly. First merge `origin/main` into the branch and run the checks. Then run `git push origin HEAD:main`. Never force-push `main`.
-10. Deploy the new `main` to Nahida.
-
-Stop before the merge only when the user asks for a draft, a review, or a hold.
-
-## Deploy every finished change
-
-After each merge into `main`, release `main` on Nahida. Do not ask for approval first.
-
-1. Update the session branch to the merged `main`:
-
-   ```powershell
-   git fetch origin
-   git merge --ff-only origin/main
-   ```
-
-   The script builds the image from the files in the worktree. Thus the worktree must contain exactly `origin/main`. `git status --short` must show nothing, and `git rev-parse HEAD` must equal `git rev-parse origin/main`.
-
-2. Run the deploy script from the repository root:
-
-   ```powershell
-   pwsh -File scripts/deploy-nahida.ps1
-   ```
-
-   The script runs the type check and the tests, builds the image, copies it to Nahida, starts it and checks `/healthz`. It can take some minutes, so give the command a long wait time.
-
-3. Check the public site. This command must show `200`:
-
-   ```powershell
-   curl.exe -s -o NUL -w "%{http_code}" https://choicervoicer.throndir.com/healthz
-   ```
-
-4. Run `git fetch origin` again. If `origin/main` moved while you deployed, another session merged work. Do steps 1 to 3 again, so that the newest `main` is live.
-5. Tell the user the released image tag. The script prints it on the `Released` line.
-
-If the deploy fails, find and fix the cause, merge the fix into `main`, and deploy again. Do not retry without a fix. If the live site is broken and you cannot fix it quickly, go back to the previous image with `-Rollback <tag>`. If the tag is wrong, the script lists the tags that are on Nahida.
-
-Exceptions:
-
-- Do not deploy when the merge changes only files that are not in the image: `docs/`, `.github/` and Markdown files in the repository root. Tell the user that no deploy was necessary.
-- Do not deploy when the user asks for a draft, a review, a hold, or no deploy.
-- If Docker Desktop does not run or SSH to Nahida fails, report the deploy as blocked. Never report a deploy that did not complete as done.
-
-## No remote CI
-
-- Do not add GitHub Actions workflows or other hosted CI. Run all checks on the local computer.
-- The repository has no workflows, so a push or a merge uses no GitHub Actions minutes.
-
-## Deployment
-
-- The live site is `https://choicervoicer.throndir.com`. It runs on Nahida (`192.168.50.9:3090`) behind Cloudflare and Nginx Proxy Manager.
-- To release `main`, run `pwsh -File scripts/deploy-nahida.ps1`. Do this after every merge (see "Deploy every finished change"). To go back to an earlier image, add `-Rollback <tag>`.
-- `scripts/configure-npm.ps1` creates or updates the Nginx Proxy Manager host. It reads the login from `NPM_IDENTITY` and `NPM_SECRET` or from a prompt. Never write the login to a file, a commit or a log.
-- See `docs/deployment.md` for the details.
-
-## Project layout
-
-- `packages/shared`: types, Zod schemas, socket event names, and the cue and caption logic.
-- `apps/server`: the Fastify and Socket.IO server, the GameBanana catalog, pack processing and rooms.
-- `apps/web`: the React and Vite client.
-- `docs/plan.md`: the design. Keep it up to date when the behaviour changes.
+Apply all [repository workflow rules](../docs/workflow.md), including local typecheck, tests, build, commit, push, and merge.
+Merge finished work into main with a merge commit. Deploy image changes to Nahida after merge.
+Respect draft, review, hold, and no-deploy requests. Do not use hosted CI.
+Start with [docs/README.md](../docs/README.md) for source locations.
+The [KB contract](../docs/kb.md) defines page metadata and index rules.

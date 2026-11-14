@@ -70,7 +70,8 @@ The data volume contains:
 
 ## Later releases
 
-Agents release `main` after every merge that changes the image. The steps are in `.github/copilot-instructions.md`, in "Deploy every finished change".
+Agents release `main` after every merge that changes the image.
+The steps are in [repository workflow](workflow.md), under "Deploy every finished change".
 
 ```powershell
 pwsh -File scripts/deploy-nahida.ps1

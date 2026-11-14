@@ -12,6 +12,7 @@ The pages describe the current code. A Planned section describes work that is no
 ## Pages
 
 - [Knowledge base contract](kb.md): How must agents search, verify, and maintain these pages?
+- [Repository workflow](workflow.md): Which local checks, merge rules, and deployment rules must contributors follow?
 - [Architecture](architecture.md): Where are startup, HTTP routes, socket commands, and shared contracts?
 - [Packs](packs.md): How do catalog search, imports, uploads, processing, random selection, and versions work?
 - [Rooms](rooms.md): Who owns rooms, assignments, phases, suggestions, queue entries, and votes?
