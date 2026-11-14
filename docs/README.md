@@ -3,7 +3,7 @@
 **Status:** Implemented
 **Last Updated:** 2026-11-14
 **Audience:** Contributors and coding agents
-**Last verified:** 2026-11-14 against 9489c5e
+**Last verified:** 2026-11-14 against b97112a
 **Code:** `packages/shared/src`, `apps/server/src`, `apps/web/src`, `deploy`, `scripts`, `Dockerfile`, `package.json`
 
 Use local `repo-kb` search to find a page. Read its cited section, then follow its Code paths.
@@ -12,8 +12,14 @@ The pages describe the current code. A Planned section describes work that is no
 ## Pages
 
 - [Knowledge base contract](kb.md): How must agents search, verify, and maintain these pages?
-- [Design and plan](plan.md): How does the existing game work?
+- [Architecture](architecture.md): Where are startup, HTTP routes, socket commands, and shared contracts?
+- [Packs](packs.md): How do catalog search, imports, uploads, processing, random selection, and versions work?
+- [Rooms](rooms.md): Who owns rooms, assignments, phases, suggestions, queue entries, and votes?
+- [Recording](recording.md): How do microphone capture, waveform, take timing, playback, scoring, and exports work?
+- [Browser](browser.md): Where are screens, asset downloads, readiness, cache, and deletion implemented?
+- [Development](development.md): Which local commands, tests, tools, and environment keys are supported?
 - [Deployment](deployment.md): How does a contributor release or roll back the service on Nahida?
+- [Superseded design](plan.md): Where should older design links point now?
 
 ## Code areas
 

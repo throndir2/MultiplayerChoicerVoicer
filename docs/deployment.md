@@ -1,5 +1,11 @@
 # Deployment on Nahida
 
+**Status:** Implemented
+**Last Updated:** 2026-11-14
+**Audience:** Contributors releasing the service
+**Last verified:** 2026-11-14 against b97112a
+**Code:** `Dockerfile`, `deploy/compose.yaml`, `deploy/.env.example`, `scripts/deploy-nahida.ps1`, `scripts/configure-npm.ps1`, `apps/server/src/config.ts`
+
 The live site is **https://choicervoicer.throndir.com**.
 
 The service is one Docker container. It uses the same release flow as Fold Down Stories: build on the workstation, copy the image over SSH, and start it with Docker Compose. No container registry and no GitHub Actions minutes are used.
@@ -9,21 +15,22 @@ The service is one Docker container. It uses the same release flow as Fold Down 
 | Item | Value |
 | --- | --- |
 | Public address | `https://choicervoicer.throndir.com` |
-| DNS | Cloudflare, proxied record (same as `stories.throndir.com`) |
+| DNS | Cloudflare and Nginx Proxy Manager are the intended public route. |
 | Host | Nahida, `192.168.50.9`, SSH port `9222`, user `throndir` |
 | Remote folder | `/Volume2/apps/multiplayer-choicer-voicer` |
 | Upstream | `http://192.168.50.9:3090` (LAN address; do not forward this port in the router) |
-| Reverse proxy | Nginx Proxy Manager on Nahida, proxy host 10, wildcard certificate `*.throndir.com` (certificate 3) |
+| Reverse proxy | Nginx Proxy Manager on Nahida; the setup script selects an existing matching certificate. |
 | Data | Docker volume `multiplayer-choicer-voicer_mcv-data` mounted at `/data` |
 | Limits | 4 CPUs, 3 GB of memory |
 
-The request path is: browser → Cloudflare → router (443 → 8443) → Nginx Proxy Manager → `192.168.50.9:3090`.
+These are repository release defaults, not a fresh audit of external DNS, router, or certificate state.
+Compose alone defaults to `127.0.0.1:3090`; the deploy script writes the Nahida bind address.
 
 The data volume contains:
 
 - `catalog.json`: the GameBanana pack list.
 - `rooms.json`: the open rooms.
-- `packs-index.json`: the processing jobs and the last use of each pack.
+- `packs-index.json`: ready processing jobs and the last use of each pack.
 - `media/packs/<packId>/`: the processed packs (cache, limited by `PACK_CACHE_MAX_GB`).
 - `media/rooms/<roomId>/`: the recordings and the exported videos and take ZIPs of each room.
 
@@ -52,13 +59,14 @@ The data volume contains:
 
    For a different domain, use `-Domain <name>`. The microphone works only on HTTPS.
 
-4. Open the domain. The first start reads the GameBanana list in the background. This takes about two and a half minutes.
+4. Open the domain. The first start reads the GameBanana list in the background. Duration depends on the catalog and network.
 
 ## Cloudflare
 
-- Cloudflare caches the pack images, the MP3 files and the MP4 files, because their names never change. Recordings (`.m4a`) and the API are not cached.
-- Uploads go in 8 MB parts, so they stay below the 100 MB request limit of the free Cloudflare plan.
-- WebSockets work through Cloudflare without extra settings.
+- The server sends immutable cache headers for media except manifests, including `.m4a` recordings.
+- Manifests use `no-cache`. API routes do not set immutable media headers.
+- These headers do not prove that Cloudflare caches a response. Its cache rules are external configuration.
+- Uploads use 8 MiB parts. The setup script enables WebSocket upgrades in Nginx Proxy Manager.
 
 ## Later releases
 
@@ -99,6 +107,29 @@ Put these values in `/Volume2/apps/multiplayer-choicer-voicer/.env` on Nahida. T
 
 After you change the file, run the deploy script again, or run `docker compose --env-file .env -f compose.yaml up -d` in the remote folder.
 
+The script preserves only the tuning keys in this table.
+It replaces MCV_IMAGE, MCV_BIND_ADDRESS, and MCV_PORT from its parameters.
+Other environment keys are not preserved or passed through by this Compose file.
+
+## Deploy script options
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `-NahidaHost`, `-SshPort`, `-SshUser` | `192.168.50.9`, `9222`, `throndir` | SSH target. |
+| `-RemoteRoot` | `/Volume2/apps/multiplayer-choicer-voicer` | Remote release folder. |
+| `-RemoteDockerBin` | `/Volume2/@apps/DockerEngine/dockerd/bin` | Remote Docker executable folder. |
+| `-BindAddress`, `-Port` | `192.168.50.9`, `3090` | Compose host binding. |
+| `-Tag` | version-date-time-short-SHA | Image tag; changed tracked files add a dirty suffix. |
+| `-Rollback` | unset | Starts an existing image instead of building one. |
+| `-KeepImages` | `3` | Retains newest images after release; 0 disables pruning. |
+| `-SkipVerify` | off | Skips script typecheck and tests, not the image build or health check. |
+| `-Logs`, `-Tail` | off, `200` | Reads logs without a release. |
+
+`configure-npm.ps1` accepts ProxyManagerUrl, Domain, ForwardHost, ForwardPort, NoCertificate, and LetsEncryptEmail.
+NoCertificate avoids requesting a new certificate when none matches; it can still use an existing certificate.
+
 ## Resources
 
-The container is limited to 4 CPUs and 3 GB of memory. Video conversion is the heaviest work. The server converts one video at a time, while the players record. When it is idle, the container uses about 100 MB of memory.
+Compose limits the container to 4 CPUs and 3 GB of memory.
+Pack video conversions run one at a time. Dub exports use a separate serialized queue.
+The code does not enforce a single shared queue for all ffmpeg operations.
