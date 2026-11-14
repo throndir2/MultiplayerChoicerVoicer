@@ -3,7 +3,7 @@
 **Status:** Implemented
 **Last Updated:** 2026-11-14
 **Audience:** Contributors and coding agents
-**Last verified:** 2026-11-14 against b97112a
+**Last verified:** 2026-11-14 against c961fe4
 **Code:** `packages/shared/src`, `apps/server/src`, `apps/web/src`, `deploy`, `scripts`, `Dockerfile`, `package.json`
 
 Use local `repo-kb` search to find a page. Read its cited section, then follow its Code paths.
@@ -22,6 +22,8 @@ The pages describe the current code. A Planned section describes work that is no
 - [Deployment](deployment.md): How does a contributor release or roll back the service on Nahida?
 - [Superseded design](plan.md): Where should older design links point now?
 - [Retrieval evaluation questions](repo-kb-eval.json): Which real questions measure KB search quality?
+- [Historical lookup comparison](kb-comparison.md): How much lookup text and how many calls could a pre-task KB save?
+- [Historical comparison inputs](repo-kb-comparison.json): Which earlier sessions, revisions, and measured reads does the replay use?
 
 ## Code areas
 
