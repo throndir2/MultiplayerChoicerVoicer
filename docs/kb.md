@@ -3,8 +3,8 @@
 **Status:** Implemented
 **Last Updated:** 2026-11-14
 **Audience:** Contributors and coding agents
-**Last verified:** 2026-11-14 against 9489c5e
-**Code:** `.github/mcp.json`
+**Last verified:** 2026-11-14 against 98d6da6
+**Code:** `.github/mcp.json`, `scripts/kb/check_kb.py`, `scripts/kb/test_check_kb.py`
 
 ## Knowledge Base First
 
@@ -60,6 +60,20 @@ Report code defects as issues; do not change product code during a documentation
 There are no generated KB pages at this revision.
 When a generator is added, its page must name the script and its complete regeneration command.
 Regenerate that page with the script. Never edit generated pages by hand.
+
+## Local KB check
+
+Python 3.9 or later is required. Run `python scripts/kb/check_kb.py --diff origin/main` before merge.
+The script checks all KB Markdown metadata, Code paths, local file links, and folder indexes.
+It also lists source changes without Code coverage and named paths that were deleted or renamed.
+Errors fail the command. Warnings do not fail it.
+The diff includes committed branch changes, staged and unstaged changes, and untracked source files.
+Generated folders named generated, dist, build, coverage, node_modules, or __pycache__ are skipped.
+There is no generated KB folder at this revision.
+Folder indexes cover Markdown pages, supporting files, and immediate subfolders under docs.
+Root and agent READMEs outside docs are not KB folder indexes.
+Run `python -m unittest discover -s scripts/kb -p "test_*.py"` for the checker fixtures.
+No checked-in Git hooks or configured hooksPath exist, so no pre-push hook is changed.
 
 ## Local commands
 
