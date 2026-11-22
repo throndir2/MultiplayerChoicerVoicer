@@ -1,10 +1,10 @@
 # Deployment on Nahida
 
 **Status:** Implemented
-**Last Updated:** 2026-11-14
+**Last Updated:** 2026-11-22
 **Audience:** Contributors releasing the service
-**Last verified:** 2026-11-14 against b97112a
-**Code:** `Dockerfile`, `deploy/compose.yaml`, `deploy/.env.example`, `scripts/deploy-nahida.ps1`, `scripts/configure-npm.ps1`, `apps/server/src/config.ts`
+**Last verified:** 2026-11-22 against b76dc30
+**Code:** `Dockerfile`, `deploy/compose.yaml`, `deploy/.env.example`, `scripts/deploy-nahida.ps1`, `scripts/configure-npm.ps1`, `scripts/resolve-nahida.ps1`, `scripts/test-nahida-discovery.ps1`, `apps/server/src/config.ts`
 
 The live site is **https://choicervoicer.throndir.com**.
 
@@ -16,9 +16,9 @@ The service is one Docker container. It uses the same release flow as Fold Down 
 | --- | --- |
 | Public address | `https://choicervoicer.throndir.com` |
 | DNS | Cloudflare and Nginx Proxy Manager are the intended public route. |
-| Host | Nahida, `192.168.50.9`, SSH port `9222`, user `throndir` |
+| Host | Nahida, discovered LAN address, SSH port `9222`, user `throndir` |
 | Remote folder | `/Volume2/apps/multiplayer-choicer-voicer` |
-| Upstream | `http://192.168.50.9:3090` (LAN address; do not forward this port in the router) |
+| Upstream | Nahida's discovered LAN address on port `3090` (do not forward this port in the router) |
 | Reverse proxy | Nginx Proxy Manager on Nahida; the setup script selects an existing matching certificate. |
 | Data | Docker volume `multiplayer-choicer-voicer_mcv-data` mounted at `/data` |
 | Limits | 4 CPUs, 3 GB of memory |
@@ -36,7 +36,7 @@ The data volume contains:
 
 ## First release
 
-1. Make sure that Docker Desktop runs on the workstation, and that `ssh -p 9222 throndir@192.168.50.9` works with a key.
+1. Make sure that Docker Desktop runs on the workstation and that the pinned SSH host key is trusted.
 2. Run the script from the repository root:
 
    ```powershell
@@ -53,7 +53,7 @@ The data volume contains:
 
    The script asks for the Nginx Proxy Manager login. You can also set `NPM_IDENTITY` and `NPM_SECRET` in the PowerShell session first. The script does not save or print the login. It:
    - uses a certificate that already covers the domain (the `*.throndir.com` wildcard), or requests a Let's Encrypt certificate;
-   - forwards `choicervoicer.throndir.com` to `http://192.168.50.9:3090`;
+   - forwards `choicervoicer.throndir.com` to the discovered Nahida address on port `3090`;
    - turns on WebSocket upgrades (the rooms use Socket.IO), HTTP/2, forced HTTPS and HSTS;
    - sets `client_max_body_size 64m` and 300-second proxy timeouts.
 
@@ -114,20 +114,36 @@ Other environment keys are not preserved or passed through by this Compose file.
 
 ## Deploy script options
 
+Both scripts use `scripts/resolve-nahida.ps1` to find Nahida before making changes.
+The helper checks Windows DNS A records for `nahida` on `192.168.50.0/24`.
+It then tries `192.168.50.114` and `192.168.50.9`, without duplicate checks or a subnet scan.
+Each candidate must pass a read-only SSH check with the existing `[192.168.50.9]:9222` host key.
+The scripts stop before writes if no candidate passes.
+All deploy SSH and SCP connections use that same pinned host key and batch mode.
+The workstation must already trust that key and have key-based SSH access.
+
 | Option | Default | Purpose |
 | --- | --- | --- |
-| `-NahidaHost`, `-SshPort`, `-SshUser` | `192.168.50.9`, `9222`, `throndir` | SSH target. |
+| `-NahidaHost`, `-SshPort`, `-SshUser` | discovered address, `9222`, `throndir` | SSH target. An explicit host still requires the pinned key. |
 | `-RemoteRoot` | `/Volume2/apps/multiplayer-choicer-voicer` | Remote release folder. |
 | `-RemoteDockerBin` | `/Volume2/@apps/DockerEngine/dockerd/bin` | Remote Docker executable folder. |
-| `-BindAddress`, `-Port` | `192.168.50.9`, `3090` | Compose host binding. |
+| `-BindAddress`, `-Port` | verified address, `3090` | Compose host binding. |
 | `-Tag` | version-date-time-short-SHA | Image tag; changed tracked files add a dirty suffix. |
 | `-Rollback` | unset | Starts an existing image instead of building one. |
 | `-KeepImages` | `3` | Retains newest images after release; 0 disables pruning. |
 | `-SkipVerify` | off | Skips script typecheck and tests, not the image build or health check. |
 | `-Logs`, `-Tail` | off, `200` | Reads logs without a release. |
 
-`configure-npm.ps1` accepts ProxyManagerUrl, Domain, ForwardHost, ForwardPort, NoCertificate, and LetsEncryptEmail.
-NoCertificate avoids requesting a new certificate when none matches; it can still use an existing certificate.
+`configure-npm.ps1` also accepts `ProxyManagerUrl`, `Domain`, `ForwardHost`, `ForwardPort`,
+`NoCertificate`, `LetsEncryptEmail`, `NahidaHost`, `SshPort`, and `SshUser`.
+Its default proxy URL and upstream use the verified address.
+Explicit proxy URLs and upstreams are kept.
+An explicit non-Nahida proxy URL and upstream do not require discovery.
+Known Nahida proxy URLs still require the pinned SSH check.
+`NoCertificate` avoids requesting a new certificate when none matches; it can still use an existing certificate.
+
+Run `pwsh -NoProfile -File scripts/test-nahida-discovery.ps1` for the local mocked discovery checks.
+The checks do not contact Nahida or change the proxy.
 
 ## Resources
 

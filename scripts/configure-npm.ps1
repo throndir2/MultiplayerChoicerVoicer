@@ -19,16 +19,36 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$ProxyManagerUrl = 'http://192.168.50.9:81',
+    [string]$ProxyManagerUrl,
     [string]$Domain = 'choicervoicer.throndir.com',
-    [string]$ForwardHost = '192.168.50.9',
+    [string]$ForwardHost,
     [int]$ForwardPort = 3090,
     [switch]$NoCertificate,
-    [string]$LetsEncryptEmail
+    [string]$LetsEncryptEmail,
+    [string]$NahidaHost,
+    [int]$SshPort = 9222,
+    [string]$SshUser = 'throndir'
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+. (Join-Path $PSScriptRoot 'resolve-nahida.ps1')
+$explicitUrl = $PSBoundParameters.ContainsKey('ProxyManagerUrl')
+$explicitForward = $PSBoundParameters.ContainsKey('ForwardHost')
+$urlHost = if ($explicitUrl) { ([uri]$ProxyManagerUrl).Host } else { '' }
+$isKnownNahidaUrl = $urlHost -in @('nahida', 'nahida.local', '192.168.50.9', '192.168.50.114')
+
+if (-not $explicitUrl -or -not $explicitForward -or $isKnownNahidaUrl -or $PSBoundParameters.ContainsKey('NahidaHost')) {
+    $hostToResolve = if ($NahidaHost) { $NahidaHost } elseif ($isKnownNahidaUrl) { $urlHost } else { '' }
+    $resolvedHost = Resolve-NahidaAddress -NahidaHost $hostToResolve -SshPort $SshPort -SshUser $SshUser
+    if ($isKnownNahidaUrl -and $NahidaHost) {
+        $urlAddress = Resolve-NahidaAddress -NahidaHost $urlHost -SshPort $SshPort -SshUser $SshUser
+        if ($urlAddress -ne $resolvedHost) { throw 'The proxy URL does not match the verified Nahida address.' }
+    }
+    if (-not $explicitUrl) { $ProxyManagerUrl = "http://${resolvedHost}:81" }
+    if (-not $explicitForward) { $ForwardHost = $resolvedHost }
+}
 
 function Write-Step {
     param([string]$Message)

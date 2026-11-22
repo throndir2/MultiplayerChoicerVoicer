@@ -1,9 +1,9 @@
 # Knowledge base map
 
 **Status:** Implemented
-**Last Updated:** 2026-11-14
+**Last Updated:** 2026-11-22
 **Audience:** Contributors and coding agents
-**Last verified:** 2026-11-14 against c961fe4
+**Last verified:** 2026-11-22 against b76dc30
 **Code:** `packages/shared/src`, `apps/server/src`, `apps/web/src`, `deploy`, `scripts`, `Dockerfile`, `package.json`
 
 Use local `repo-kb` search to find a page. Read its cited section, then follow its Code paths.
@@ -19,7 +19,7 @@ The pages describe the current code. A Planned section describes work that is no
 - [Recording](recording.md): How do microphone capture, waveform, take timing, playback, scoring, and exports work?
 - [Browser](browser.md): Where are screens, asset downloads, readiness, cache, and deletion implemented?
 - [Development](development.md): Which local commands, tests, tools, and environment keys are supported?
-- [Deployment](deployment.md): How does a contributor release or roll back the service on Nahida?
+- [Deployment](deployment.md): How do the scripts find Nahida and release or roll back the service?
 - [Superseded design](plan.md): Where should older design links point now?
 - [Retrieval evaluation questions](repo-kb-eval.json): Which real questions measure KB search quality?
 - [Historical lookup comparison](kb-comparison.md): How much lookup text and how many calls could a pre-task KB save?
