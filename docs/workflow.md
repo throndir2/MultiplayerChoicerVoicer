@@ -1,9 +1,9 @@
 # Repository instructions
 
 **Status:** Implemented
-**Last Updated:** 2026-11-14
+**Last Updated:** 2026-11-22
 **Audience:** Contributors and coding agents
-**Last verified:** 2026-11-14 against 2339555
+**Last verified:** 2026-11-22 against b76dc30
 **Code:** `package.json`, `scripts/deploy-nahida.ps1`, `scripts/configure-npm.ps1`, `scripts/kb/check_kb.py`, `Dockerfile`, `deploy/compose.yaml`
 
 These instructions apply to all agent work in this repository.
@@ -88,7 +88,7 @@ Exceptions:
 
 ## Deployment
 
-- The live site is `https://choicervoicer.throndir.com`. It runs on Nahida (`192.168.50.9:3090`) behind Cloudflare and Nginx Proxy Manager.
+- The live site is `https://choicervoicer.throndir.com`. It runs on Nahida on port `3090`, behind Cloudflare and Nginx Proxy Manager.
 - To release `main`, run `pwsh -File scripts/deploy-nahida.ps1`. Do this after every merge (see "Deploy every finished change"). To go back to an earlier image, add `-Rollback <tag>`.
 - `scripts/configure-npm.ps1` creates or updates the Nginx Proxy Manager host. It reads the login from `NPM_IDENTITY` and `NPM_SECRET` or from a prompt. Never write the login to a file, a commit or a log.
 - See `docs/deployment.md` for the details.

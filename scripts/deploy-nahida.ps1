@@ -18,12 +18,12 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$NahidaHost = '192.168.50.9',
+    [string]$NahidaHost,
     [int]$SshPort = 9222,
     [string]$SshUser = 'throndir',
     [string]$RemoteRoot = '/Volume2/apps/multiplayer-choicer-voicer',
     [string]$RemoteDockerBin = '/Volume2/@apps/DockerEngine/dockerd/bin',
-    [string]$BindAddress = '192.168.50.9',
+    [string]$BindAddress,
     [int]$Port = 3090,
     [string]$Tag,
     [string]$Rollback,
@@ -36,6 +36,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+. (Join-Path $PSScriptRoot 'resolve-nahida.ps1')
+$NahidaHost = Resolve-NahidaAddress -NahidaHost $NahidaHost -SshPort $SshPort -SshUser $SshUser
+if (-not $PSBoundParameters.ContainsKey('BindAddress')) { $BindAddress = $NahidaHost }
+$sshOptions = @(Get-NahidaSshOptions)
 
 $imageName = 'multiplayer-choicer-voicer'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -69,7 +74,7 @@ function Invoke-Remote {
     $payload = "export PATH=`$PATH:$RemoteDockerBin`nset -e`n" + $Script + "`n"
     $payload = $payload -replace "`r", ''
     $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
-    & ssh -p $SshPort -o BatchMode=yes $remoteTarget ('echo ' + $encoded + ' | base64 -d | sh')
+    & ssh @sshOptions -p $SshPort $remoteTarget ('echo ' + $encoded + ' | base64 -d | sh')
     $exitCode = $LASTEXITCODE
     if (-not $AllowFailure -and $exitCode -ne 0) {
         throw "Remote command failed with exit code $exitCode."
@@ -106,7 +111,7 @@ if ($Logs) {
     $script = "export PATH=`$PATH:$RemoteDockerBin`ncd $RemoteRoot`ndocker compose logs --no-color --timestamps --tail $Tail app`n"
     $script = $script -replace "`r", ''
     $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script))
-    & ssh -p $SshPort -o BatchMode=yes $remoteTarget ('echo ' + $encoded + ' | base64 -d | sh')
+    & ssh @sshOptions -p $SshPort $remoteTarget ('echo ' + $encoded + ' | base64 -d | sh')
     if ($LASTEXITCODE -ne 0) { throw "Reading logs failed with exit code $LASTEXITCODE." }
     return
 }
@@ -171,7 +176,7 @@ fi
 
         Invoke-Remote -Script "mkdir -p $RemoteRoot" | Out-Null
         Write-Step 'Transferring the image to Nahida'
-        Invoke-Native -Command 'scp' -Arguments @('-P', "$SshPort", '-q', $gzPath, "${remoteTarget}:$RemoteRoot/image.tar.gz")
+        Invoke-Native -Command 'scp' -Arguments (@($sshOptions) + @('-P', "$SshPort", '-q', $gzPath, "${remoteTarget}:$RemoteRoot/image.tar.gz"))
 
         Write-Step 'Loading the image on Nahida'
         Invoke-Remote -Script "gunzip -c $RemoteRoot/image.tar.gz | docker load`nrm -f $RemoteRoot/image.tar.gz" | Out-Null
@@ -181,7 +186,7 @@ fi
 
 Write-Step 'Uploading the Compose definition'
 Invoke-Remote -Script "mkdir -p $RemoteRoot" | Out-Null
-Invoke-Native -Command 'scp' -Arguments @('-P', "$SshPort", '-q', (Join-Path $repoRoot 'deploy\compose.yaml'), "${remoteTarget}:$RemoteRoot/compose.yaml")
+Invoke-Native -Command 'scp' -Arguments (@($sshOptions) + @('-P', "$SshPort", '-q', (Join-Path $repoRoot 'deploy\compose.yaml'), "${remoteTarget}:$RemoteRoot/compose.yaml"))
 
 Write-Step 'Writing the environment file'
 # Tuning values that are already in the remote .env file are kept.
