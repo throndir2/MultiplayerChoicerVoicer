@@ -20,7 +20,7 @@ Run `python scripts/kb/check_kb.py --diff origin/main` before merge. Fix every e
 ## Repository workflow and map
 
 Apply all [repository workflow rules](../docs/workflow.md), including local typecheck, tests, build, commit, push, and merge.
-Merge finished work into main with a merge commit. Deploy image changes to Nahida after merge.
+Merge finished work into main with a merge commit. Deploy image changes to Rukkhadevata after merge.
 Respect draft, review, hold, and no-deploy requests. Do not use hosted CI.
 Start with [docs/README.md](../docs/README.md) for source locations.
 The [KB contract](../docs/kb.md) defines page metadata and index rules.
