@@ -19,7 +19,7 @@ The pages describe the current code. A Planned section describes work that is no
 - [Recording](recording.md): How do microphone capture, waveform, take timing, playback, scoring, and exports work?
 - [Browser](browser.md): Where are screens, asset downloads, readiness, cache, and deletion implemented?
 - [Development](development.md): Which local commands, tests, tools, and environment keys are supported?
-- [Deployment](deployment.md): How do the scripts find Nahida and release or roll back the service?
+- [Deployment](deployment.md): How do the scripts release or roll back the service on Rukkhadevata?
 - [Superseded design](plan.md): Where should older design links point now?
 - [Retrieval evaluation questions](repo-kb-eval.json): Which real questions measure KB search quality?
 - [Historical lookup comparison](kb-comparison.md): How much lookup text and how many calls could a pre-task KB save?
